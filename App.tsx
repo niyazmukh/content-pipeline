@@ -6,7 +6,6 @@ import type {
   StoryCluster,
   OutlinePayload,
   EvidenceItem,
-  RunAgentSuccessPayload,
   ArticleGenerationResult,
   RetrievalMetrics,
   ApiConfigResponse,
@@ -18,7 +17,7 @@ import StoryClusters from './components/StoryClusters';
 import OutlineWithCoverage from './components/OutlineWithCoverage';
 import EvidencePanel from './components/EvidencePanel';
 import ArticlePanel from './components/ArticlePanel';
-import { runUnifiedPipeline, generateArticle, generateImagePrompt, fetchPublicConfig } from './services/geminiService';
+import { runPipelineToOutline, runTargetedResearchPoint, generateArticle, generateImagePrompt, fetchPublicConfig } from './services/geminiService';
 import { LoaderIcon, SparklesIcon } from './components/icons';
 import { loadApiKeys, saveApiKeys, clearApiKeys, type ApiKeys } from './services/apiKeys';
 
@@ -114,6 +113,10 @@ const App: React.FC = () => {
       [event.stage]: event.status,
     }));
 
+    if (event.runId) {
+      setRunId((prev) => prev || event.runId);
+    }
+
     if (event.stage === 'retrieval') {
       if (event.status === 'success') {
         const data = event.data as RetrievalMetrics | undefined;
@@ -134,22 +137,15 @@ const App: React.FC = () => {
     }
 
     if (event.stage === 'outline' && event.status === 'success') {
-      const data = event.data as { outline?: OutlinePayload } | undefined;
+      const data = event.data as { outline?: OutlinePayload; recencyHours?: number; clusters?: StoryCluster[] } | undefined;
       if (data?.outline) {
         setOutline(data.outline);
       }
-    }
-
-    if (event.stage === 'targetedResearch' && event.status === 'success') {
-      const data = event.data as RunAgentSuccessPayload | undefined;
-      if (data) {
-        setRunId(data.runId);
-        setOutline(data.outline);
-        setEvidence(data.evidence);
+      if (Array.isArray(data?.clusters)) {
         setClusters(data.clusters);
-        if (typeof data.recencyHours === 'number') {
-          setRunRecencyHours(data.recencyHours);
-        }
+      }
+      if (typeof data?.recencyHours === 'number') {
+        setRunRecencyHours(data.recencyHours);
       }
     }
   }, []);
@@ -164,31 +160,50 @@ const App: React.FC = () => {
     resetState();
 
     try {
-      const agentResult = await runUnifiedPipeline({
+      const outlineResult = await runPipelineToOutline({
         topic: topic.trim(),
         recencyHours,
         onStageEvent: handleStageEvent,
       });
 
-      setRunId(agentResult.runId);
-      setOutline(agentResult.outline);
-      setEvidence(agentResult.evidence);
-      setClusters(agentResult.clusters);
-      setRunRecencyHours(agentResult.recencyHours);
+      setRunId(outlineResult.runId);
+      setOutline(outlineResult.outline);
+      setClusters(outlineResult.clusters);
+      setRunRecencyHours(outlineResult.recencyHours);
+
+      setStageStates((prev) => ({ ...prev, targetedResearch: 'start' }));
+      const outlinePoints = outlineResult.outline.outline;
+      const evidenceItems: EvidenceItem[] = [];
+      for (let i = 0; i < outlinePoints.length; i += 1) {
+        setStageStates((prev) => ({ ...prev, targetedResearch: 'progress' }));
+        const item = await runTargetedResearchPoint(
+          {
+            runId: outlineResult.runId,
+            topic: topic.trim(),
+            outlineIndex: i,
+            point: outlinePoints[i].point,
+            recencyHours: outlineResult.recencyHours,
+          },
+          handleStageEvent,
+        );
+        evidenceItems.push(item);
+        setEvidence([...evidenceItems]);
+      }
+      setStageStates((prev) => ({ ...prev, targetedResearch: 'success' }));
 
       const article = await generateArticle({
-        runId: agentResult.runId,
+        runId: outlineResult.runId,
         topic: topic.trim(),
-        outline: agentResult.outline,
-        clusters: agentResult.clusters,
-        evidence: agentResult.evidence,
-        recencyHours: agentResult.recencyHours,
+        outline: outlineResult.outline,
+        clusters: outlineResult.clusters,
+        evidence: evidenceItems,
+        recencyHours: outlineResult.recencyHours,
       }, handleStageEvent);
 
       setArticleResult(article);
 
       const image = await generateImagePrompt({
-        runId: agentResult.runId,
+        runId: outlineResult.runId,
         article: article.article.article,
       }, handleStageEvent);
 

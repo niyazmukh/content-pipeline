@@ -1,9 +1,10 @@
 import type { SseStream } from '../../shared/sse';
 import { getPublicConfig } from '../../shared/config';
 import { createNoopArtifactStore } from '../../shared/artifacts';
-import { handleRunAgentStream } from '../../server/pipeline/runAgentStream';
+import { handleRunOutlineStream } from '../../server/pipeline/runOutlineStream';
 import { handleGenerateArticleStream } from '../../server/pipeline/generateArticleStream';
 import { handleGenerateImagePromptStream } from '../../server/pipeline/generateImagePromptStream';
+import { handleTargetedResearchStream } from '../../server/pipeline/targetedResearchStream';
 import { createWorkerSseStream } from './sse';
 import { buildWorkerConfig, getRequestKeys, type WorkerEnv } from './config';
 
@@ -148,38 +149,63 @@ export default {
         return jsonResponse(getPublicConfig(config), { headers });
       }
 
-      if (url.pathname === '/api/run-agent-stream' && request.method === 'GET') {
-        const missing = ensureGeminiKey(config);
-        if (missing) return missing;
+    if (url.pathname === '/api/run-agent-stream' && request.method === 'GET') {
+      const missing = ensureGeminiKey(config);
+      if (missing) return missing;
 
-        const topic = String(url.searchParams.get('topic') || url.searchParams.get('topicQuery') || '').trim();
-        if (!topic) {
-          return jsonResponse({ error: 'Missing topic query' }, { status: 400 });
-        }
+      const topic = String(url.searchParams.get('topic') || url.searchParams.get('topicQuery') || '').trim();
+      if (!topic) {
+        return jsonResponse({ error: 'Missing topic query' }, { status: 400 });
+      }
 
         const recencyHoursRaw = url.searchParams.get('recencyHours');
         const recencyHoursOverride = recencyHoursRaw ? Number(recencyHoursRaw) : undefined;
 
-        const { stream, sse } = createWorkerSseStream({
-          heartbeatMs: config.server.heartbeatIntervalMs,
-          label: 'run-agent',
-        });
-        bindAbort(request, sse);
+      const { stream, sse } = createWorkerSseStream({
+        heartbeatMs: config.server.heartbeatIntervalMs,
+        label: 'run-agent',
+      });
+      bindAbort(request, sse);
 
-        handleRunAgentStream({
-          topic,
-          recencyHoursOverride: Number.isFinite(recencyHoursOverride) ? recencyHoursOverride : undefined,
-          config,
-          stream: sse,
-          store,
-          signal: sse.controller.signal,
-        }).catch((error) => {
-          sse.sendJson('fatal', { error: error instanceof Error ? error.message : String(error) });
-          sse.close();
-        });
+      handleRunOutlineStream({
+        topic,
+        recencyHoursOverride: Number.isFinite(recencyHoursOverride) ? recencyHoursOverride : undefined,
+        config,
+        stream: sse,
+        store,
+        signal: sse.controller.signal,
+      }).catch((error) => {
+        sse.sendJson('fatal', { error: error instanceof Error ? error.message : String(error) });
+        sse.close();
+      });
 
-        return new Response(stream, { headers: sseHeaders(origin) });
-      }
+      return new Response(stream, { headers: sseHeaders(origin) });
+    }
+
+    if (url.pathname === '/api/targeted-research-stream' && request.method === 'POST') {
+      const missing = ensureGeminiKey(config);
+      if (missing) return missing;
+
+      const body = await request.json().catch(() => null);
+      const { stream, sse } = createWorkerSseStream({
+        heartbeatMs: config.server.heartbeatIntervalMs,
+        label: 'targeted-research',
+      });
+      bindAbort(request, sse);
+
+      handleTargetedResearchStream({
+        body,
+        config,
+        stream: sse,
+        store,
+        signal: sse.controller.signal,
+      }).catch((error) => {
+        sse.sendJson('fatal', { error: error instanceof Error ? error.message : String(error) });
+        sse.close();
+      });
+
+      return new Response(stream, { headers: sseHeaders(origin) });
+    }
 
       if (url.pathname === '/api/generate-article-stream' && request.method === 'POST') {
         const missing = ensureGeminiKey(config);

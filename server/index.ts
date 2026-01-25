@@ -6,10 +6,11 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { loadConfig, getPublicConfig } from './config/config';
 import { createSseStream } from './http/sse';
-import { handleRunAgentStream } from './pipeline/runAgentStream';
+import { handleRunOutlineStream } from './pipeline/runOutlineStream';
 import { handleGenerateArticleStream } from './pipeline/generateArticleStream';
 import { handleGenerateImagePromptStream } from './pipeline/generateImagePromptStream';
 import { createFsArtifactStore } from './persistence/fsStore';
+import { handleTargetedResearchStream } from './pipeline/targetedResearchStream';
 
 const config = loadConfig();
 const store = createFsArtifactStore(config);
@@ -163,9 +164,26 @@ app.get('/api/run-agent-stream', async (req: Request, res: Response) => {
   const recencyHoursOverride = parseRecencyHours(req.query.recencyHours, config.recencyHours);
   const requestConfig = applyRequestConfigOverrides(config, req);
 
-  await handleRunAgentStream({
+  await handleRunOutlineStream({
     topic,
     recencyHoursOverride,
+    config: requestConfig,
+    stream,
+    store,
+    signal: stream.controller.signal,
+  });
+});
+
+app.post('/api/targeted-research-stream', async (req: Request, res: Response) => {
+  const stream = createSseStream(res, {
+    heartbeatMs: config.server.heartbeatIntervalMs,
+    label: 'targeted-research',
+  });
+
+  const requestConfig = applyRequestConfigOverrides(config, req);
+
+  await handleTargetedResearchStream({
+    body: req.body,
     config: requestConfig,
     stream,
     store,

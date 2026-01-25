@@ -67,13 +67,13 @@ export const buildWorkerConfig = (keys: RequestKeys, env: WorkerEnv = {}): AppCo
     recencyHours: 168,
     retrieval: {
       // Workers have a strict subrequest (fetch) budget per invocation.
-      // Keep these conservative so we still have room for Gemini calls.
-      minAccepted: 12,
-      maxAttempts: 22,
-      globalConcurrency: 2,
+      // Keep these below ~50 total fetches, including Gemini calls.
+      minAccepted: 20,
+      maxAttempts: 35,
+      globalConcurrency: 3,
       perHostConcurrency: 2,
       fetchTimeoutMs: 30_000,
-      totalBudgetMs: 45_000,
+      totalBudgetMs: 55_000,
       cacheTtlMs: 15 * 60 * 1000,
       userAgent:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',

@@ -1,6 +1,5 @@
 import type {
   StageEvent,
-  RunAgentSuccessPayload,
   ArticleGenerationResult,
   OutlinePayload,
   StoryCluster,
@@ -29,25 +28,40 @@ interface RunAgentOptions {
   onStageEvent?: (event: StageEvent<unknown>) => void;
 }
 
-export const runUnifiedPipeline = async ({
+export interface OutlineRunResult {
+  runId: string;
+  recencyHours: number;
+  outline: OutlinePayload;
+  clusters: StoryCluster[];
+}
+
+export const runPipelineToOutline = async ({
   topic,
   recencyHours,
   onStageEvent,
-}: RunAgentOptions): Promise<RunAgentSuccessPayload> => {
+}: RunAgentOptions): Promise<OutlineRunResult> => {
   const params = new URLSearchParams();
   params.set('topic', topic);
   if (typeof recencyHours === 'number' && Number.isFinite(recencyHours)) {
     params.set('recencyHours', String(recencyHours));
   }
   const url = `${API_BASE_URL}/run-agent-stream?${params.toString()}`;
-  return streamSseRequest<RunAgentSuccessPayload>({
+  return streamSseRequest<OutlineRunResult>({
     url,
     method: 'GET',
     headers: buildAuthHeaders(),
     mapResult: (event, payload) => {
       if (event === 'stage-event' && isStageEvent(payload)) {
-        if (payload.stage === 'targetedResearch' && payload.status === 'success') {
-          return payload.data as RunAgentSuccessPayload;
+        if (payload.stage === 'outline' && payload.status === 'success') {
+          const data = payload.data as Partial<OutlineRunResult> | undefined;
+          if (data?.outline && Array.isArray(data.clusters) && typeof data.recencyHours === 'number') {
+            return {
+              runId: payload.runId,
+              recencyHours: data.recencyHours,
+              outline: data.outline,
+              clusters: data.clusters,
+            };
+          }
         }
       }
       return undefined;
@@ -55,6 +69,42 @@ export const runUnifiedPipeline = async ({
     onStageEvent: (payload) => {
       if (onStageEvent && isStageEvent(payload)) {
         onStageEvent(payload);
+      }
+    },
+  });
+};
+
+interface TargetedResearchPayload {
+  runId: string;
+  topic: string;
+  outlineIndex: number;
+  point: string;
+  recencyHours: number;
+}
+
+export const runTargetedResearchPoint = async (
+  payload: TargetedResearchPayload,
+  onStageEvent?: (event: StageEvent<unknown>) => void,
+): Promise<EvidenceItem> => {
+  const url = `${API_BASE_URL}/targeted-research-stream`;
+  return streamSseRequest<EvidenceItem>({
+    url,
+    body: payload,
+    headers: buildAuthHeaders(),
+    mapResult: (event, value) => {
+      if (event === 'targeted-research-result') {
+        return value as EvidenceItem;
+      }
+      if (event === 'stage-event' && isStageEvent(value)) {
+        if (value.stage === 'targetedResearch' && value.status === 'failure') {
+          throw new Error(value.message || 'Targeted research failed');
+        }
+      }
+      return undefined;
+    },
+    onStageEvent: (value) => {
+      if (onStageEvent && isStageEvent(value)) {
+        onStageEvent(value);
       }
     },
   });

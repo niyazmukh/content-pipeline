@@ -1,23 +1,21 @@
 import type { AppConfig } from '../../shared/config';
 import type { SseStream } from '../../shared/sse';
-import { makeStageEmitter, StageEvent } from './stageEmitter';
+import { makeStageEmitter, type StageEvent } from './stageEmitter';
 import { retrieveUnified } from '../retrieval/orchestrator';
 import { createLogger } from '../obs/logger';
 import { randomId } from '../../shared/crypto';
 import { generateOutlineFromClusters } from './outline';
-import { performTargetedResearch } from './targetedResearch';
 import { TopicAnalysisService } from '../services/topicAnalysisService';
-import { runWithPool } from '../utils/concurrency';
-import type { EvidenceItem } from './types';
 import type { ArtifactStore } from '../../shared/artifacts';
 import type {
   ProviderName,
   ProviderRetrievalMetrics,
   RetrievalMetrics,
   NormalizedArticle,
+  StoryCluster,
 } from '../retrieval/types';
 
-export interface RunAgentStreamArgs {
+export interface RunOutlineStreamArgs {
   topic: string;
   recencyHoursOverride?: number;
   config: AppConfig;
@@ -104,14 +102,14 @@ const ensureProviderMetrics = (
   perProvider: mergeProviderSummaries(summaries, articles),
 });
 
-export const handleRunAgentStream = async ({
+export const handleRunOutlineStream = async ({
   topic,
   recencyHoursOverride,
   config,
   stream,
   store,
   signal,
-}: RunAgentStreamArgs): Promise<void> => {
+}: RunOutlineStreamArgs): Promise<void> => {
   const runId = randomId();
   const logger = createLogger(config);
   await store.ensureLayout();
@@ -121,7 +119,6 @@ export const handleRunAgentStream = async ({
   const retrievalStage = makeStageEmitter(runId, 'retrieval', stageSender);
   const rankingStage = makeStageEmitter(runId, 'ranking', stageSender);
   const outlineStage = makeStageEmitter(runId, 'outline', stageSender);
-  const researchStage = makeStageEmitter(runId, 'targetedResearch', stageSender);
   let currentStage = retrievalStage;
 
   try {
@@ -145,6 +142,7 @@ export const handleRunAgentStream = async ({
       recencyHoursOverride,
       store,
     });
+
     const enrichedMetrics = ensureProviderMetrics(
       retrievalResult.batch.metrics,
       retrievalResult.providerSummaries,
@@ -179,91 +177,20 @@ export const handleRunAgentStream = async ({
       signal,
     });
     await store.saveRunArtifact(runId, 'outline', outlineResult);
+
     outlineStage.success({
       data: {
-        outline: outlineResult.outline,
-        attempts: outlineResult.attempts,
-      },
-    });
-
-    currentStage = researchStage;
-
-    const outlinePoints = outlineResult.outline.outline;
-
-    researchStage.start({
-      message: 'Running targeted research for each outline point',
-      data: { total: outlinePoints.length },
-    });
-    const totalPoints = outlinePoints.length;
-    const targetedConcurrency = Math.max(1, Math.min(2, config.retrieval.globalConcurrency || 2));
-    let completed = 0;
-
-    const targetedResults = await runWithPool(totalPoints, targetedConcurrency, async (i) => {
-      const point = outlinePoints[i];
-      if (signal?.aborted) {
-        throw new Error('Aborted');
-      }
-
-      researchStage.progress({
-        message: `Researching outline point ${i + 1}/${totalPoints}`,
-        data: { index: i, point: point.point, status: 'start' },
-      });
-
-      const researchResult = await performTargetedResearch({
         runId,
-        outlinePoint: {
-          index: i,
-          text: point.point,
-        },
-        topic,
-        recencyHoursOverride,
-        config,
-        logger,
-        store,
-        signal,
-      });
-
-      completed += 1;
-      researchStage.progress({
-        message: `Completed targeted research ${completed}/${totalPoints}`,
-        data: { index: i, point: point.point, status: 'done', completed, total: totalPoints },
-      });
-
-      return researchResult;
-    });
-
-    const evidencePayloads: EvidenceItem[] = targetedResults.map((researchResult, i) => {
-      const point = outlinePoints[i];
-      return {
-        outlineIndex: i,
-        point: point.point,
-        digest: researchResult.digest,
-        citations: researchResult.citations.map((citation) => ({
-          id: citation.id,
-          title: citation.title,
-          url: citation.url,
-          publishedAt: citation.publishedAt,
-          source: citation.source,
-        })),
-      };
-    });
-
-    await store.saveRunArtifact(runId, 'targeted_research', targetedResults);
-
-    researchStage.success({
-      data: {
-        outline: outlineResult.outline,
-        evidence: evidencePayloads,
-        clusters: retrievalResult.clusters,
         recencyHours: effectiveRecencyHours,
-        runId,
-      },
+        outline: outlineResult.outline,
+        clusters: retrievalResult.clusters,
+      } satisfies { runId: string; recencyHours: number; outline: unknown; clusters: StoryCluster[] },
     });
 
     stream.close();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.error('Pipeline failed', { runId, error: message });
+    logger.error('Outline pipeline failed', { runId, error: message });
     currentStage.failure(error);
     stream.sendJson('fatal', { error: message });
     stream.close();
