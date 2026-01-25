@@ -1,4 +1,3 @@
-import JSON5 from 'json5';
 import type { AppConfig } from '../../shared/config';
 import { loadPrompt } from '../prompts/loader';
 import type { StoryCluster } from '../retrieval/types';

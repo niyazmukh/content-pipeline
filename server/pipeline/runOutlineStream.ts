@@ -61,6 +61,9 @@ const mergeProviderSummaries = (
       if (typeof entry.returned === 'number') {
         bucket.returned = entry.returned;
       }
+      if (typeof entry.query === 'string') {
+        bucket.query = entry.query;
+      }
       if (typeof entry.preFiltered === 'number') {
         bucket.preFiltered = entry.preFiltered;
       }
@@ -75,6 +78,15 @@ const mergeProviderSummaries = (
       }
       if (typeof entry.missingPublishedAt === 'number') {
         bucket.missingPublishedAt = entry.missingPublishedAt;
+      }
+      if (typeof entry.disabled === 'boolean') {
+        bucket.disabled = entry.disabled;
+      }
+      if (typeof entry.failed === 'boolean') {
+        bucket.failed = entry.failed;
+      }
+      if (typeof entry.error === 'string' || entry.error === null) {
+        bucket.error = entry.error;
       }
       bucket.extractionErrors = Array.isArray(entry.extractionErrors) ? entry.extractionErrors : [];
     }
@@ -196,4 +208,3 @@ export const handleRunOutlineStream = async ({
     stream.close();
   }
 };
-

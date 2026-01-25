@@ -177,8 +177,18 @@ export const retrieveUnified = async (
     const extractedArticles: NormalizedArticle[] = [];
     const extractionErrors: Array<{ url: string; error: string; provider: ProviderName }> = [];
 
-    // Surface connector-level failures in the same error channel used by the UI.
+    // Attach connector metadata to provider metrics and surface connector-level failures
+    // in the same error channel used by the UI.
     for (const result of connectorResults) {
+      const bucket = providerMetrics.get(result.provider);
+      if (bucket) {
+        bucket.query = result.query;
+        const raw = result.metrics as any;
+        bucket.disabled = Boolean(raw?.disabled);
+        bucket.failed = Boolean(raw?.failed);
+        bucket.error = typeof raw?.error === 'string' ? raw.error : null;
+      }
+
       const metrics = result.metrics as any;
       const failed = Boolean(metrics?.failed);
       const error = typeof metrics?.error === 'string' ? metrics.error : null;
@@ -206,7 +216,32 @@ export const retrieveUnified = async (
     }
 
     // Extract and evaluate
-    const candidatesToTry = uniqueCandidates.slice(0, Math.max(0, maxAttempts));
+    // NOTE: If we simply take the first N candidates, earlier providers (e.g. Google) can consume the entire
+    // extraction budget, leaving later providers with `returned > 0` but `extractionAttempts = 0`.
+    // To avoid starving providers and to improve source diversity, we select candidates in a provider round-robin.
+    const attemptBudget = Math.max(0, Math.floor(maxAttempts));
+    const providerQueues = new Map<ProviderName, CandidateRecord[]>([
+      ['google', []],
+      ['newsapi', []],
+      ['eventregistry', []],
+    ]);
+    for (const candidate of uniqueCandidates) {
+      providerQueues.get(candidate.provider)?.push(candidate);
+    }
+
+    const candidatesToTry: CandidateRecord[] = [];
+    while (candidatesToTry.length < attemptBudget) {
+      let progressed = false;
+      for (const provider of ['google', 'newsapi', 'eventregistry'] as ProviderName[]) {
+        if (candidatesToTry.length >= attemptBudget) break;
+        const queue = providerQueues.get(provider);
+        const next = queue?.shift();
+        if (!next) continue;
+        candidatesToTry.push(next);
+        progressed = true;
+      }
+      if (!progressed) break;
+    }
     const globalSemaphore = new Semaphore(Math.max(1, config.retrieval.globalConcurrency || 1));
     const perHostLimit = Math.max(1, config.retrieval.perHostConcurrency || 1);
     const hostSemaphores = new Map<string, Semaphore>();

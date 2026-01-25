@@ -11,64 +11,60 @@ import { handleGenerateArticleStream } from './pipeline/generateArticleStream';
 import { handleGenerateImagePromptStream } from './pipeline/generateImagePromptStream';
 import { createFsArtifactStore } from './persistence/fsStore';
 import { handleTargetedResearchStream } from './pipeline/targetedResearchStream';
+import { createLogger } from './obs/logger';
 
 const config = loadConfig();
 const store = createFsArtifactStore(config);
-console.log('[config] environment:', config.environment);
-console.log('[config] recencyHours:', config.recencyHours);
-console.log('[config] connectors.googleCse.enabled:', config.connectors.googleCse.enabled);
-console.log(
-  '[config] connectors.googleCse.apiKey present:',
-  Boolean(config.connectors.googleCse.apiKey),
-);
-console.log(
-  '[config] connectors.googleCse.searchEngineId present:',
-  Boolean(config.connectors.googleCse.searchEngineId),
-);
-console.log('[config] connectors.newsApi.enabled:', config.connectors.newsApi.enabled);
-console.log(
-  '[config] connectors.newsApi.apiKey present:',
-  Boolean(config.connectors.newsApi.apiKey),
-);
-console.log('[config] connectors.eventRegistry.enabled:', config.connectors.eventRegistry.enabled);
-console.log(
-  '[config] connectors.eventRegistry.apiKey present:',
-  Boolean(config.connectors.eventRegistry.apiKey),
-);
+const logger = createLogger(config);
+logger.info('Config loaded', {
+  environment: config.environment,
+  recencyHours: config.recencyHours,
+  connectors: {
+    googleCse: {
+      enabled: config.connectors.googleCse.enabled,
+      hasApiKey: Boolean(config.connectors.googleCse.apiKey),
+      hasSearchEngineId: Boolean(config.connectors.googleCse.searchEngineId),
+    },
+    newsApi: {
+      enabled: config.connectors.newsApi.enabled,
+      hasApiKey: Boolean(config.connectors.newsApi.apiKey),
+    },
+    eventRegistry: {
+      enabled: config.connectors.eventRegistry.enabled,
+      hasApiKey: Boolean(config.connectors.eventRegistry.apiKey),
+    },
+  },
+});
 
 const app = express();
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
-app.use((req, _res, next) => {
-  const start = Date.now();
-  resLog(`[${req.method}] ${req.originalUrl}`);
-  // Avoid logging full headers to prevent leaking secrets; log UA only.
-  try {
-    const ua = req.headers['user-agent'] || '';
-    resLog(`UA: ${JSON.stringify(ua)}`);
-  } catch (_) {
-    // ignore
-  }
-  let finished = false;
-  _res.on('finish', () => {
-    finished = true;
-    const elapsed = Date.now() - start;
-    resLog(`[${req.method}] ${req.originalUrl} finished ${_res.statusCode} after ${elapsed}ms`);
+if (config.observability.logLevel === 'debug') {
+  app.use((req, res, next) => {
+    const startedAt = Date.now();
+    logger.debug('HTTP request', { method: req.method, path: req.originalUrl });
+    let finished = false;
+    res.on('finish', () => {
+      finished = true;
+      logger.debug('HTTP response', {
+        method: req.method,
+        path: req.originalUrl,
+        status: res.statusCode,
+        elapsedMs: Date.now() - startedAt,
+      });
+    });
+    res.on('close', () => {
+      if (finished) return;
+      logger.debug('HTTP closed early', {
+        method: req.method,
+        path: req.originalUrl,
+        elapsedMs: Date.now() - startedAt,
+      });
+    });
+    next();
   });
-  _res.on('close', () => {
-    if (finished) return;
-    const elapsed = Date.now() - start;
-    resLog(`[${req.method}] ${req.originalUrl} closed early after ${elapsed}ms`);
-  });
-  next();
-});
-
-function resLog(message: string) {
-  /* eslint-disable no-console */
-  console.log(message);
-  /* eslint-enable no-console */
 }
 
 const headerValue = (req: Request, name: string): string => String(req.get(name) || '').trim();
@@ -293,7 +289,7 @@ app.get('/api/normalized/:articleId', async (req: Request, res: Response) => {
 const port = config.server.port;
 
 app.listen(port, () => {
-  console.log(`Server listening on http://localhost:${port}`);
+  logger.info('Server listening', { url: `http://localhost:${port}` });
 });
 
 

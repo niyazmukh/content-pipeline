@@ -1,9 +1,6 @@
-import JSON5 from 'json5';
 import type { AppConfig } from '../../shared/config';
 import type { Logger } from '../obs/logger';
 import { LLMService } from '../services/llmService';
-import { extractJson, extractJsonRobust } from '../utils/jsonExtract';
-import { sleep } from '../utils/async';
 
 export interface TopicQueryRewriteArgs {
   rawTopic: string;

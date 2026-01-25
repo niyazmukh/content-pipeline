@@ -267,14 +267,6 @@ const buildRequestPayload = (
     includeArticleConcepts: true,
   };
 
-  // Explicitly log the payload for debugging
-  console.log('[eventregistry connector] Request payload:', JSON.stringify({
-    keyword: keywordPayload,
-    keywordOper: Array.isArray(keywordPayload) ? 'or' : undefined,
-    dateStart,
-    dateEnd
-  }, null, 2));
-
   if (Array.isArray(keywordPayload)) {
     payload.keywordOper = 'or';
   }
@@ -306,7 +298,6 @@ export const fetchEventRegistryCandidates = async (
 
   const apiKey = config.connectors.eventRegistry.apiKey;
   if (!apiKey) {
-    console.warn('[eventregistry connector] Missing API key, returning disabled');
     return {
       provider: 'eventregistry',
       fetchedAt: new Date().toISOString(),

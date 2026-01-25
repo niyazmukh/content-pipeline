@@ -34,11 +34,15 @@ export interface NormalizedArticle {
 
 export interface RetrievalProviderMetrics {
   provider: 'google' | 'newsapi' | 'eventregistry';
+  query?: string;
   returned: number;
   preFiltered: number;
   extractionAttempts: number;
   accepted: number;
   missingPublishedAt: number;
+  disabled?: boolean;
+  failed?: boolean;
+  error?: string | null;
   extractionErrors: Array<{ url: string; error: string }>;
 }
 
@@ -121,5 +125,19 @@ export interface ApiConfigResponse {
     globalConcurrency: number;
     perHostConcurrency: number;
     totalBudgetMs: number;
+  };
+}
+
+export interface ApiHealthResponse {
+  ok: boolean;
+  ts: string;
+  backendKeys?: {
+    gemini: boolean;
+    newsApi: boolean;
+    eventRegistry: boolean;
+    googleCse: boolean;
+  };
+  probes?: {
+    newsApi?: { ok: boolean; status?: number; totalResults?: number; error?: string };
   };
 }

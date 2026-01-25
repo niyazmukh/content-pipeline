@@ -5,11 +5,12 @@ import type {
   StoryCluster,
   EvidenceItem,
   ApiConfigResponse,
+  ApiHealthResponse,
 } from '../shared/types';
 import { streamSseRequest } from './sseClient';
 import { buildAuthHeaders } from './apiKeys';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE || 'https://niyazm.niyazm.workers.dev/api';
+export const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE || 'https://niyazm.niyazm.workers.dev/api';
 
 const isStageEvent = (value: unknown): value is StageEvent => {
   return Boolean(
@@ -180,6 +181,15 @@ export const fetchPublicConfig = async (): Promise<ApiConfigResponse> => {
   const res = await fetch(`${API_BASE_URL}/config`);
   if (!res.ok) {
     throw new Error(`Failed to load public config (${res.status})`);
+  }
+  return res.json();
+};
+
+export const fetchHealth = async (options: { probeNewsApi?: boolean } = {}): Promise<ApiHealthResponse> => {
+  const suffix = options.probeNewsApi ? '?probe=1' : '';
+  const res = await fetch(`${API_BASE_URL}/healthz${suffix}`);
+  if (!res.ok) {
+    throw new Error(`Failed to load health (${res.status})`);
   }
   return res.json();
 };

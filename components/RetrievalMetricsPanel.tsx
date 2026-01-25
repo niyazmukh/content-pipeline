@@ -53,6 +53,9 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
           <p className="text-sm text-slate-400">
             Candidates {metrics.candidateCount} | Accepted {metrics.accepted} | Duplicates removed {metrics.duplicatesRemoved}
           </p>
+          <p className="text-xs text-slate-500 mt-1">
+            Returned counts are connector candidates; extraction attempts depend on the global extraction budget and may be 0 if a provider is skipped.
+          </p>
         </div>
         <div className="text-xs text-slate-400 text-right leading-tight">
           <p>Newest article age: {metrics.newestArticleHours != null ? `${metrics.newestArticleHours}h` : 'n/a'}</p>
@@ -92,7 +95,32 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
               return (
                 <tr key={provider.provider} className="border-t border-slate-800">
                   <th scope="row" className="px-3 py-2 font-semibold text-slate-200">
-                    {providerLabels[provider.provider]}
+                    <div className="flex items-center gap-2">
+                      <span>{providerLabels[provider.provider]}</span>
+                      {provider.disabled && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-700 bg-slate-950/60 text-slate-400 uppercase tracking-wide">
+                          disabled
+                        </span>
+                      )}
+                      {provider.failed && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-red-900/60 bg-red-950/40 text-red-300 uppercase tracking-wide">
+                          failed
+                        </span>
+                      )}
+                    </div>
+                    {provider.query && (
+                      <div
+                        className="mt-1 text-xs text-slate-500 font-normal truncate max-w-[28rem]"
+                        title={provider.query}
+                      >
+                        {provider.query}
+                      </div>
+                    )}
+                    {provider.error && (
+                      <div className="mt-1 text-xs text-red-300 font-normal truncate max-w-[28rem]" title={provider.error}>
+                        {provider.error}
+                      </div>
+                    )}
                   </th>
                   <td className="px-3 py-2 text-right">{provider.returned}</td>
                   <td className="px-3 py-2 text-right">{provider.preFiltered}</td>

@@ -32,10 +32,6 @@ export const fetchGoogleCandidates = async (
   const searchEngineId = config.connectors.googleCse.searchEngineId;
 
   if (!apiKey || !searchEngineId) {
-    console.warn('[google connector] Missing credentials, returning disabled', {
-      hasApiKey: Boolean(apiKey),
-      hasSearchEngineId: Boolean(searchEngineId),
-    });
     return {
       provider: 'google',
       fetchedAt: new Date().toISOString(),
@@ -87,7 +83,6 @@ export const fetchGoogleCandidates = async (
 
       if (!response.ok) {
         if (response.status === 429) {
-          console.warn('[google connector] Quota exceeded (429), skipping Google Search');
           return {
             provider: 'google',
             fetchedAt: new Date().toISOString(),
@@ -101,10 +96,6 @@ export const fetchGoogleCandidates = async (
       }
 
       const data = (await response.json()) as { items?: Array<Record<string, any>> };
-
-      if (config.observability.logLevel === 'debug') {
-        console.log(`[google connector] Fetched ${data.items?.length || 0} items for query: "${query}"`);
-      }
 
       const pageItems = (data.items || [])
         .map((item) => {

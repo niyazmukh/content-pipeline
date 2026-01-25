@@ -45,7 +45,6 @@ export const fetchNewsApiCandidates = async (
 
   const apiKey = config.connectors.newsApi.apiKey;
   if (!apiKey) {
-    console.warn('[newsapi connector] Missing API key, returning disabled');
     return {
       provider: 'newsapi',
       fetchedAt: new Date().toISOString(),

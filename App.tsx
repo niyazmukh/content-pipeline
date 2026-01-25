@@ -9,6 +9,7 @@ import type {
   ArticleGenerationResult,
   RetrievalMetrics,
   ApiConfigResponse,
+  ApiHealthResponse,
 } from './shared/types';
 import { DEFAULT_TOPIC_QUERY } from './shared/defaultTopicQuery';
 import PipelineStatus from './components/PipelineStatus';
@@ -17,7 +18,7 @@ import StoryClusters from './components/StoryClusters';
 import OutlineWithCoverage from './components/OutlineWithCoverage';
 import EvidencePanel from './components/EvidencePanel';
 import ArticlePanel from './components/ArticlePanel';
-import { runPipelineToOutline, runTargetedResearchPoint, generateArticle, generateImagePrompt, fetchPublicConfig } from './services/geminiService';
+import { API_BASE_URL, runPipelineToOutline, runTargetedResearchPoint, generateArticle, generateImagePrompt, fetchPublicConfig, fetchHealth } from './services/geminiService';
 import { LoaderIcon, SparklesIcon } from './components/icons';
 import { loadApiKeys, saveApiKeys, clearApiKeys, type ApiKeys } from './services/apiKeys';
 
@@ -32,6 +33,15 @@ const buildInitialStageState = (): StageUiStatus => ({
   targetedResearch: 'idle',
   synthesis: 'idle',
   imagePrompt: 'idle',
+});
+
+const buildInitialStageMessages = (): Record<StageName, string> => ({
+  retrieval: '',
+  ranking: '',
+  outline: '',
+  targetedResearch: '',
+  synthesis: '',
+  imagePrompt: '',
 });
 
 const mapStageStatus = (status: StageStatus | 'idle'): 'idle' | 'loading' | 'success' | 'error' => {
@@ -69,6 +79,11 @@ const App: React.FC = () => {
   const [recencyHours, setRecencyHours] = useState<number>(168);
   const [runRecencyHours, setRunRecencyHours] = useState<number | null>(null);
   const [apiKeys, setApiKeys] = useState<ApiKeys>(() => loadApiKeys());
+  const [health, setHealth] = useState<ApiHealthResponse | null>(null);
+  const [healthError, setHealthError] = useState<string>('');
+  const [stageMessages, setStageMessages] = useState<Record<StageName, string>>(buildInitialStageMessages);
+  const [stageEventLog, setStageEventLog] = useState<Array<StageEvent<unknown>>>([]);
+  const [targetedProgress, setTargetedProgress] = useState<{ completed: number; total: number; currentIndex: number | null } | null>(null);
   const hasUserKeys = Boolean(
     apiKeys.geminiApiKey ||
       apiKeys.googleCseApiKey ||
@@ -91,11 +106,26 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    fetchHealth()
+      .then((next) => {
+        setHealth(next);
+        setHealthError('');
+      })
+      .catch((err) => {
+        setHealth(null);
+        setHealthError(err instanceof Error ? err.message : String(err));
+      });
+  }, []);
+
+  useEffect(() => {
     saveApiKeys(apiKeys);
   }, [apiKeys]);
 
   const resetState = useCallback(() => {
     setStageStates(buildInitialStageState());
+    setStageMessages(buildInitialStageMessages());
+    setStageEventLog([]);
+    setTargetedProgress(null);
     setClusters([]);
     setOutline(null);
     setEvidence([]);
@@ -112,6 +142,18 @@ const App: React.FC = () => {
       ...prev,
       [event.stage]: event.status,
     }));
+
+    if (event.message) {
+      setStageMessages((prev) => ({ ...prev, [event.stage]: event.message || '' }));
+    }
+
+    setStageEventLog((prev) => {
+      const next = [...prev, event];
+      if (next.length > 200) {
+        next.splice(0, next.length - 200);
+      }
+      return next;
+    });
 
     if (event.runId) {
       setRunId((prev) => prev || event.runId);
@@ -173,9 +215,11 @@ const App: React.FC = () => {
 
       setStageStates((prev) => ({ ...prev, targetedResearch: 'start' }));
       const outlinePoints = outlineResult.outline.outline;
+      setTargetedProgress({ completed: 0, total: outlinePoints.length, currentIndex: outlinePoints.length ? 0 : null });
       const evidenceItems: EvidenceItem[] = [];
       for (let i = 0; i < outlinePoints.length; i += 1) {
         setStageStates((prev) => ({ ...prev, targetedResearch: 'progress' }));
+        setTargetedProgress((prev) => (prev ? { ...prev, currentIndex: i } : { completed: 0, total: outlinePoints.length, currentIndex: i }));
         const item = await runTargetedResearchPoint(
           {
             runId: outlineResult.runId,
@@ -188,8 +232,10 @@ const App: React.FC = () => {
         );
         evidenceItems.push(item);
         setEvidence([...evidenceItems]);
+        setTargetedProgress((prev) => (prev ? { ...prev, completed: i + 1 } : { completed: i + 1, total: outlinePoints.length, currentIndex: null }));
       }
       setStageStates((prev) => ({ ...prev, targetedResearch: 'success' }));
+      setTargetedProgress((prev) => (prev ? { ...prev, currentIndex: null, completed: prev.total } : null));
 
       const article = await generateArticle({
         runId: outlineResult.runId,
@@ -217,11 +263,43 @@ const App: React.FC = () => {
   }, [handleStageEvent, recencyHours, resetState, topic]);
 
   const pipelineStatus = useMemo(() => {
+    const detailForStage = (stage: StageName): string | undefined => {
+      if (stage === 'retrieval' && retrievalMetrics) {
+        return `${retrievalMetrics.accepted} accepted / ${retrievalMetrics.candidateCount} candidates`;
+      }
+      if (stage === 'ranking' && clusters.length) {
+        return `${clusters.length} clusters`;
+      }
+      if (stage === 'outline' && outline) {
+        return `${outline.outline.length} outline points`;
+      }
+      if (stage === 'targetedResearch' && outline) {
+        const total = outline.outline.length;
+        const completed = evidence.length;
+        const runningIndex = targetedProgress?.currentIndex;
+        if (Number.isFinite(runningIndex ?? NaN) && runningIndex != null) {
+          return `Researching ${runningIndex + 1}/${total} (done ${completed}/${total})`;
+        }
+        if (total > 0) {
+          return `Done ${Math.min(completed, total)}/${total}`;
+        }
+      }
+      if (stage === 'synthesis' && articleResult) {
+        return `${articleResult.article.wordCount} words`;
+      }
+      if (stage === 'imagePrompt' && imagePrompt) {
+        return 'Ready';
+      }
+      const msg = stageMessages[stage];
+      return msg || undefined;
+    };
+
     return STAGES.map((stage) => ({
       stage,
       status: mapStageStatus(stageStates[stage]),
+      detail: detailForStage(stage),
     }));
-  }, [stageStates]);
+  }, [articleResult, clusters.length, evidence.length, imagePrompt, outline, retrievalMetrics, stageMessages, stageStates, targetedProgress]);
 
   const canGenerateArticle = outline && evidence.length > 0 && clusters.length > 0;
 
@@ -457,6 +535,113 @@ const App: React.FC = () => {
         </section>
 
         <PipelineStatus stages={pipelineStatus} />
+
+        <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow">
+          <details className="group">
+            <summary className="cursor-pointer select-none text-lg font-semibold text-slate-200">
+              Diagnostics
+            </summary>
+            <div className="mt-4 space-y-3 text-sm text-slate-300">
+              <div className="text-xs text-slate-400">
+                API base: <span className="font-mono text-slate-200">{API_BASE_URL}</span>
+              </div>
+              <div className="text-xs text-slate-400">
+                Run ID: <span className="font-mono text-slate-200">{runId || '—'}</span>
+              </div>
+
+              <div className="text-xs text-slate-400">
+                Client keys:{' '}
+                <span className="text-slate-200">
+                  {hasUserKeys ? 'provided' : 'not provided (using default backend keys if available)'}
+                </span>
+              </div>
+
+              <div className="text-xs text-slate-400">
+                Gemini RPM header:{' '}
+                <span className="font-mono text-slate-200">{apiKeys.geminiRpm?.trim() || '—'}</span>
+              </div>
+
+              {publicConfig && (
+                <div className="text-xs text-slate-400">
+                  Retrieval budget:{' '}
+                  <span className="font-mono text-slate-200">minAccepted={publicConfig.retrieval.minAccepted}</span>{' '}
+                  <span className="font-mono text-slate-200">maxAttempts={publicConfig.retrieval.maxAttempts}</span>{' '}
+                  <span className="font-mono text-slate-200">globalConc={publicConfig.retrieval.globalConcurrency}</span>{' '}
+                  <span className="font-mono text-slate-200">perHostConc={publicConfig.retrieval.perHostConcurrency}</span>{' '}
+                  <span className="font-mono text-slate-200">budgetMs={publicConfig.retrieval.totalBudgetMs}</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span>Default backend keys:</span>
+                {health?.backendKeys ? (
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      ['Gemini', health.backendKeys.gemini],
+                      ['NewsAPI', health.backendKeys.newsApi],
+                      ['EventRegistry', health.backendKeys.eventRegistry],
+                      ['Google CSE', health.backendKeys.googleCse],
+                    ] as Array<[string, boolean]>).map(([label, ok]) => (
+                      <span
+                        key={label}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                          ok
+                            ? 'border-emerald-900/60 bg-emerald-950/40 text-emerald-300'
+                            : 'border-slate-700 bg-slate-950/60 text-slate-400'
+                        } uppercase tracking-wide`}
+                      >
+                        {label}: {ok ? 'on' : 'off'}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-slate-500">
+                    {healthError ? `unavailable (${healthError})` : 'loading…'}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchHealth()
+                      .then((next) => {
+                        setHealth(next);
+                        setHealthError('');
+                      })
+                      .catch((err) => {
+                        setHealth(null);
+                        setHealthError(err instanceof Error ? err.message : String(err));
+                      });
+                  }}
+                  className="ml-auto text-xs text-slate-300 hover:text-slate-100 border border-slate-700 rounded px-3 py-1"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </details>
+
+          <details className="group mt-4">
+            <summary className="cursor-pointer select-none text-sm font-semibold text-slate-200">
+              Event log (last {stageEventLog.length})
+            </summary>
+            <div className="mt-3 max-h-64 overflow-auto border border-slate-800 rounded-lg bg-slate-950/40 p-3">
+              {stageEventLog.length === 0 ? (
+                <div className="text-xs text-slate-500">No events yet.</div>
+              ) : (
+                <div className="space-y-1">
+                  {stageEventLog.slice(-50).map((ev, idx) => (
+                    <div key={`${ev.ts}-${idx}`} className="text-xs font-mono text-slate-300">
+                      <span className="text-slate-500">{ev.ts.slice(11, 19)}</span>{' '}
+                      <span className="text-slate-400">{ev.stage}</span>{' '}
+                      <span className="text-slate-400">{ev.status}</span>{' '}
+                      <span className="text-slate-200">{ev.message || ''}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </details>
+        </section>
 
         <RetrievalMetricsPanel metrics={retrievalMetrics} />
 
