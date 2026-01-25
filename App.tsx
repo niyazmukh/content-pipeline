@@ -347,19 +347,25 @@ const App: React.FC = () => {
                   Optional: add your own keys to avoid shared backend quotas. Keys are stored in your browser.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                clearApiKeys();
-                setApiKeys(loadApiKeys());
-              }}
-              className="text-xs text-slate-300 hover:text-slate-100 border border-slate-700 rounded px-3 py-1 shrink-0"
-              title="Clears locally stored keys (browser localStorage)."
-            >
-              Clear keys
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  clearApiKeys();
+                  setApiKeys(loadApiKeys());
+                }}
+                className="text-xs text-slate-300 hover:text-slate-100 border border-slate-700 rounded px-3 py-1"
+                title="Clears locally stored keys (browser localStorage)."
+              >
+                Clear keys
+              </button>
+              <span className="text-xs text-slate-400 group-open:hidden">Show</span>
+              <span className="text-xs text-slate-400 hidden group-open:inline">Hide</span>
+              <span className="inline-block text-slate-500 group-open:hidden">&gt;</span>
+              <span className="inline-block text-slate-500 hidden group-open:inline">v</span>
+            </div>
             </summary>
 
           <div className="mt-3 text-xs text-slate-400 flex items-center gap-2">
@@ -425,12 +431,8 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="mt-6 border-t border-slate-800 pt-4 text-sm text-slate-300">
-            <details className="group">
-              <summary className="cursor-pointer select-none font-semibold text-slate-200 flex items-center justify-between">
-                <span>Getting API keys</span>
-                <span className="text-xs text-slate-400 group-open:hidden">Show</span>
-                <span className="text-xs text-slate-400 hidden group-open:inline">Hide</span>
-              </summary>
+            <div>
+              <div className="font-semibold text-slate-200">Getting API keys</div>
               <div className="mt-3 text-slate-400 space-y-4">
                 <p className="text-sm">
                   Leave all fields blank to use the default backend keys. If you paste your own keys, they stay in your browser (localStorage) and are sent with each request.
@@ -503,7 +505,7 @@ const App: React.FC = () => {
                     <ol className="list-decimal list-inside space-y-2">
                       <li>Create a search engine at <a className="text-blue-400 hover:text-blue-300" href="https://programmablesearchengine.google.com/" target="_blank" rel="noreferrer">Programmable Search Engine</a>.</li>
                       <li>Copy the "Search engine ID" (also called <code className="text-slate-300">cx</code>) and paste it into "Google CSE Search Engine ID (cx)".</li>
-                      <li>In Google Cloud, enable the “Custom Search API”, create an API key, and paste it into “Google CSE API key”.</li>
+                      <li>In Google Cloud, enable the "Custom Search API", create an API key, and paste it into "Google CSE API key".</li>
                     </ol>
                     <p className="text-xs text-slate-500">
                       Reference: <a className="text-blue-400 hover:text-blue-300" href="https://developers.google.com/custom-search/v1/overview" target="_blank" rel="noreferrer">Custom Search JSON API</a>.
@@ -511,7 +513,7 @@ const App: React.FC = () => {
                   </div>
                 </details>
               </div>
-            </details>
+            </div>
           </div>
           </details>
         </section>
@@ -565,7 +567,7 @@ const App: React.FC = () => {
               onClick={runPipeline}
               disabled={isRunning || !configLoaded}
               className="inline-flex items-center justify-center h-12 px-6 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:cursor-not-allowed transition"
-              title="Runs retrieval → clustering → outline → targeted research → synthesis."
+              title="Runs retrieval -> clustering -> outline -> targeted research -> synthesis."
             >
               {isRunning ? <LoaderIcon className="w-5 h-5 animate-spin" /> : <SparklesIcon className="w-5 h-5" />}
               <span className="ml-2 font-semibold">Run pipeline</span>
