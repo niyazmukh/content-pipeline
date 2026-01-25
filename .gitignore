@@ -1,0 +1,63 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node modules and build outputs
+node_modules/
+dist/
+dist-ssr/
+build/
+/.vite/
+
+# Local environment files
+# Ignore main .env files but allow examples (explicitly keep .env.example in repo if present)
+.env
+.env.*
+!.env.example
+
+# Editor directories and files (allow recommended extensions list only)
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Generated run artifacts (model responses, search dumps)
+raw_data/
+
+# Coverage/test outputs
+coverage/
+.nyc_output/
+.coverage
+
+# Caches and temp
+.cache/
+.parcel-cache/
+esbuild.cache
+/.turbo/
+
+# TypeScript build outputs / generated artifacts
+server/constants.cjs
+
+# Cloudflare Worker local state
+worker/.wrangler/
+.wrangler/
+
+# Key files and certificates
+*.pem
+*.key
+*.p12
+*.jks
+
+# Misc
+*.local
+server_output.md

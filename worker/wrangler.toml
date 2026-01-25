@@ -1,0 +1,7 @@
+name = "gemini-content-pipeline"
+main = "src/index.ts"
+compatibility_date = "2025-01-25"
+
+[vars]
+# Optional: set a default allowed origin for CORS. Use "*" for development.
+ALLOWED_ORIGIN = "*"
