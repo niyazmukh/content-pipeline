@@ -339,12 +339,12 @@ const App: React.FC = () => {
 
       <main className="max-w-6xl mx-auto px-6 pb-16 space-y-8">
         <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow-lg">
-          <details className="group" open={!hasUserKeys}>
+          <details className="group">
             <summary className="cursor-pointer select-none flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold">API keys</h2>
-              <p className="text-sm text-slate-400 mt-1">
-                Optional: add your own keys to avoid shared backend quotas. Keys are stored in your browser.
+              <div>
+                <h2 className="text-lg font-semibold">API keys</h2>
+                <p className="text-sm text-slate-400 mt-1">
+                  Optional: add your own keys to avoid shared backend quotas. Keys are stored in your browser.
               </p>
             </div>
             <button
