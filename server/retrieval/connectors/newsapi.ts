@@ -93,6 +93,8 @@ export const fetchNewsApiCandidates = async (
         method: 'GET',
         headers: {
           'X-Api-Key': apiKey,
+          // NewsAPI rejects anonymous requests without a User-Agent.
+          'User-Agent': config.retrieval.userAgent || 'content-pipeline/1.0',
         },
         signal: controller.signal,
       });

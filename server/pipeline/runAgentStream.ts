@@ -15,6 +15,7 @@ import type {
   ProviderRetrievalMetrics,
   RetrievalMetrics,
   NormalizedArticle,
+  StoryCluster,
 } from '../retrieval/types';
 
 export interface RunAgentStreamArgs {
@@ -104,6 +105,53 @@ const ensureProviderMetrics = (
   perProvider: mergeProviderSummaries(summaries, articles),
 });
 
+const buildEvidenceFromClusters = (
+  outlinePoints: Array<{ point: string }>,
+  clusters: StoryCluster[],
+  recencyHours: number,
+): EvidenceItem[] => {
+  const recencyDays = Math.max(1, Math.round(recencyHours / 24));
+  const topClusters = clusters
+    .slice()
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  return outlinePoints.map((p, outlineIndex) => {
+    if (!topClusters.length) {
+      return {
+        outlineIndex,
+        point: p.point,
+        digest: `No fresh evidence found within the last ${recencyDays} day${recencyDays === 1 ? '' : 's'}.`,
+        citations: [],
+      };
+    }
+
+    const lines: string[] = [];
+    const citations = topClusters.map((cluster, idx) => {
+      const citationId = idx + 1;
+      const rep = cluster.representative;
+      const published = rep.publishedAt ? rep.publishedAt.split('T')[0] : 'Unknown date';
+      lines.push(
+        `[${citationId}] ${published} - ${rep.sourceName ?? rep.sourceHost}: ${rep.title}. Key points: ${rep.excerpt}`,
+      );
+      return {
+        id: citationId,
+        title: rep.title,
+        url: rep.canonicalUrl,
+        publishedAt: rep.publishedAt,
+        source: rep.sourceName ?? rep.sourceHost,
+      };
+    });
+
+    return {
+      outlineIndex,
+      point: p.point,
+      digest: lines.join('\n'),
+      citations,
+    };
+  });
+};
+
 export const handleRunAgentStream = async ({
   topic,
   recencyHoursOverride,
@@ -116,6 +164,7 @@ export const handleRunAgentStream = async ({
   const logger = createLogger(config);
   await store.ensureLayout();
   const effectiveRecencyHours = recencyHoursOverride ?? config.recencyHours;
+  const isWorkerRuntime = config.persistence.mode === 'none';
 
   const stageSender = <T>(event: StageEvent<T>) => sendStageEvent(stream, event);
   const retrievalStage = makeStageEmitter(runId, 'retrieval', stageSender);
@@ -126,14 +175,19 @@ export const handleRunAgentStream = async ({
 
   try {
     let searchQuery: string | { google: string; newsapi: string; eventregistry: string[] } = topic;
-    try {
-      const analysisService = new TopicAnalysisService(config, logger);
-      const analysis = await analysisService.analyze(topic, signal);
-      searchQuery = analysis.queries;
-      logger.info('Topic analysis result', { runId, analysis });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn('Topic analysis failed; using raw topic', { runId, error: message });
+    if (!isWorkerRuntime) {
+      try {
+        const analysisService = new TopicAnalysisService(config, logger);
+        const analysis = await analysisService.analyze(topic, signal);
+        searchQuery = analysis.queries;
+        logger.info('Topic analysis result', { runId, analysis });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn('Topic analysis failed; using raw topic', { runId, error: message });
+        searchQuery = topic;
+      }
+    } else {
+      // Workers have a strict fetch budget per request; skip extra Gemini calls here.
       searchQuery = topic;
     }
 
@@ -187,12 +241,35 @@ export const handleRunAgentStream = async ({
     });
 
     currentStage = researchStage;
-    researchStage.start({
-      message: 'Running targeted research for each outline point',
-      data: { total: outlineResult.outline.outline.length },
-    });
 
     const outlinePoints = outlineResult.outline.outline;
+
+    if (isWorkerRuntime) {
+      researchStage.start({
+        message: 'Preparing evidence from retrieved clusters',
+        data: { total: outlinePoints.length },
+      });
+
+      const evidencePayloads = buildEvidenceFromClusters(outlinePoints, retrievalResult.clusters, effectiveRecencyHours);
+
+      researchStage.success({
+        data: {
+          outline: outlineResult.outline,
+          evidence: evidencePayloads,
+          clusters: retrievalResult.clusters,
+          recencyHours: effectiveRecencyHours,
+          runId,
+        },
+      });
+
+      stream.close();
+      return;
+    }
+
+    researchStage.start({
+      message: 'Running targeted research for each outline point',
+      data: { total: outlinePoints.length },
+    });
     const totalPoints = outlinePoints.length;
     const targetedConcurrency = Math.max(1, Math.min(2, config.retrieval.globalConcurrency || 2));
     let completed = 0;

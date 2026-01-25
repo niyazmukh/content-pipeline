@@ -88,11 +88,59 @@ export default {
       const config = buildWorkerConfig(keys, env);
       const store = createNoopArtifactStore();
 
-      if (url.pathname === '/api/healthz') {
-        const headers = new Headers();
-        withCors(headers, origin);
-        return jsonResponse({ ok: true, ts: new Date().toISOString() }, { headers });
+    if (url.pathname === '/api/healthz') {
+      const headers = new Headers();
+      withCors(headers, origin);
+
+      const probe = url.searchParams.get('probe') === '1';
+      let newsApiProbe: { ok: boolean; status?: number; totalResults?: number; error?: string } | undefined;
+      if (probe && env.NEWS_API_KEY) {
+        try {
+          const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+          const to = new Date().toISOString();
+          const params = new URLSearchParams({
+            q: 'test',
+            sortBy: 'publishedAt',
+            language: 'en',
+            pageSize: '1',
+            page: '1',
+            from,
+            to,
+          });
+          const response = await fetch(`https://newsapi.org/v2/everything?${params.toString()}`, {
+            headers: {
+              'X-Api-Key': env.NEWS_API_KEY,
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+            },
+          });
+          const json = (await response.json().catch(() => null)) as any;
+          newsApiProbe = {
+            ok: response.ok && json?.status === 'ok',
+            status: response.status,
+            totalResults: typeof json?.totalResults === 'number' ? json.totalResults : undefined,
+            error: typeof json?.message === 'string' ? json.message : undefined,
+          };
+        } catch (error) {
+          newsApiProbe = { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
       }
+
+      return jsonResponse(
+        {
+          ok: true,
+          ts: new Date().toISOString(),
+          backendKeys: {
+            gemini: Boolean(env.GEMINI_API_KEY),
+            newsApi: Boolean(env.NEWS_API_KEY),
+            eventRegistry: Boolean(env.EVENT_REGISTRY_API_KEY),
+            googleCse: Boolean(env.GOOGLE_CSE_API_KEY && env.GOOGLE_CSE_CX),
+          },
+          ...(probe ? { probes: { newsApi: newsApiProbe } } : {}),
+        },
+        { headers },
+      );
+    }
 
       if (url.pathname === '/api/config') {
         const headers = new Headers();

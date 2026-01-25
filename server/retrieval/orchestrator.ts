@@ -77,12 +77,15 @@ export const retrieveUnified = async (
   }
 
   // Determine specific queries for each provider
-  const googleQuery = typeof query === 'string' ? query : (query.google || '');
-  const newsApiQuery = typeof query === 'string' ? query : (query.newsapi || '');
-  const eventRegistryQuery = typeof query === 'string' ? query : (query.eventregistry || []);
+  // Use a representative query string for logging/metadata if we have a map.
+  // If a provider-specific query is missing, fall back to this string so we don't accidentally
+  // disable a connector by passing an empty query (common with LLM-built query maps).
+  const mainQueryString = typeof query === 'string' ? query : (query.google || query.newsapi || 'multi-provider-query');
 
-  // Use a representative query string for logging/metadata if we have a map
-  const mainQueryString = typeof query === 'string' ? query : (googleQuery || newsApiQuery || 'multi-provider-query');
+  const googleQuery = typeof query === 'string' ? query : (query.google || mainQueryString);
+  const newsApiQuery = typeof query === 'string' ? query : (query.newsapi || mainQueryString);
+  const eventRegistryQuery =
+    typeof query === 'string' ? [query] : (query.eventregistry && query.eventregistry.length ? query.eventregistry : [mainQueryString]);
   const queryTokens = tokenize(mainQueryString);
 
   const filterOptions = {
@@ -171,6 +174,20 @@ export const retrieveUnified = async (
       });
     });
 
+    const extractedArticles: NormalizedArticle[] = [];
+    const extractionErrors: Array<{ url: string; error: string; provider: ProviderName }> = [];
+
+    // Surface connector-level failures in the same error channel used by the UI.
+    for (const result of connectorResults) {
+      const metrics = result.metrics as any;
+      const failed = Boolean(metrics?.failed);
+      const error = typeof metrics?.error === 'string' ? metrics.error : null;
+      if (failed && error) {
+        extractionErrors.push({ url: `connector:${result.provider}`, error, provider: result.provider });
+        providerMetrics.get(result.provider)?.extractionErrors.push({ url: `connector:${result.provider}`, error });
+      }
+    }
+
     // Update returned counts
     for (const c of allCandidates) {
       const m = providerMetrics.get(c.provider);
@@ -187,9 +204,6 @@ export const retrieveUnified = async (
         uniqueCandidates.push(c);
       }
     }
-
-    const extractedArticles: NormalizedArticle[] = [];
-    const extractionErrors: Array<{ url: string; error: string; provider: ProviderName }> = [];
 
     // Extract and evaluate
     const candidatesToTry = uniqueCandidates.slice(0, Math.max(0, maxAttempts));

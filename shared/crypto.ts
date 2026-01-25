@@ -1,5 +1,5 @@
 export const randomId = (): string => {
-  const g = globalThis as typeof globalThis & { crypto?: Crypto };
+  const g = globalThis as typeof globalThis & { crypto?: { randomUUID?: () => string } };
   if (g.crypto?.randomUUID) {
     return g.crypto.randomUUID();
   }

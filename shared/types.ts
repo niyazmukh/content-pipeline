@@ -123,4 +123,3 @@ export interface ApiConfigResponse {
     totalBudgetMs: number;
   };
 }
-
