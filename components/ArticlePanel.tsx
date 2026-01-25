@@ -19,9 +19,11 @@ const ArticlePanel: React.FC<{
     <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-200">Article</h2>
+          <h2 className="text-lg font-semibold text-slate-200" title="Final output synthesized by Gemini from outline + clusters + evidence.">
+            Article
+          </h2>
           <p className="text-sm text-slate-400 mt-1">
-            {article.wordCount} words • novelty score {noveltyScore.toFixed(2)}
+            {article.wordCount} words - novelty score {noveltyScore.toFixed(2)}
           </p>
         </div>
       </div>
@@ -66,4 +68,3 @@ const ArticlePanel: React.FC<{
 };
 
 export default ArticlePanel;
-

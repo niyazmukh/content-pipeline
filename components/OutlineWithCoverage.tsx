@@ -3,7 +3,9 @@ import type { OutlinePayload } from '../shared/types';
 
 const OutlineWithCoverage: React.FC<{ outline: OutlinePayload }> = ({ outline }) => (
   <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow">
-    <h2 className="text-lg font-semibold text-slate-200">Outline</h2>
+    <h2 className="text-lg font-semibold text-slate-200" title="Thesis + outline proposed by Gemini from the clustered sources.">
+      Outline
+    </h2>
     <p className="text-sm text-slate-400 mt-1">{outline.thesis}</p>
     <ol className="mt-4 space-y-3 list-decimal list-inside text-slate-200">
       {outline.outline.map((p, idx) => (
@@ -22,4 +24,3 @@ const OutlineWithCoverage: React.FC<{ outline: OutlinePayload }> = ({ outline })
 );
 
 export default OutlineWithCoverage;
-

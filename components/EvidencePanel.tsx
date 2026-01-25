@@ -3,7 +3,9 @@ import type { EvidenceItem } from '../shared/types';
 
 const EvidencePanel: React.FC<{ evidence: EvidenceItem[] }> = ({ evidence }) => (
   <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow">
-    <h2 className="text-lg font-semibold text-slate-200">Evidence</h2>
+    <h2 className="text-lg font-semibold text-slate-200" title="Evidence is collected per outline point and includes citations used later for synthesis.">
+      Evidence
+    </h2>
     <div className="mt-4 space-y-4">
       {evidence.map((item) => (
         <article key={item.outlineIndex} className="border border-slate-800 rounded-lg p-4 bg-slate-950/40">
@@ -34,4 +36,3 @@ const EvidencePanel: React.FC<{ evidence: EvidenceItem[] }> = ({ evidence }) => 
 );
 
 export default EvidencePanel;
-

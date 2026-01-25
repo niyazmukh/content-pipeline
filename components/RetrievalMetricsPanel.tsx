@@ -81,12 +81,12 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
           <thead className="text-xs uppercase tracking-wide text-slate-400">
             <tr>
               <th className="px-3 py-2 font-medium">Provider</th>
-              <th className="px-3 py-2 font-medium text-right">Returned</th>
-              <th className="px-3 py-2 font-medium text-right">Pre-filtered</th>
-              <th className="px-3 py-2 font-medium text-right">Extraction attempts</th>
-              <th className="px-3 py-2 font-medium text-right">Accepted</th>
-              <th className="px-3 py-2 font-medium text-right">Missing dates</th>
-              <th className="px-3 py-2 font-medium text-right">Errors</th>
+              <th className="px-3 py-2 font-medium text-right" title="How many candidates the connector returned before extraction.">Returned</th>
+              <th className="px-3 py-2 font-medium text-right" title="Rejected after extraction (low quality, off-topic, too promotional) or filtered by URL de-dupe.">Pre-filtered</th>
+              <th className="px-3 py-2 font-medium text-right" title="How many candidate URLs were actually opened and processed (budget-limited).">Extraction attempts</th>
+              <th className="px-3 py-2 font-medium text-right" title="How many extracted articles passed filters and were accepted.">Accepted</th>
+              <th className="px-3 py-2 font-medium text-right" title="Accepted/reviewed articles with missing or unknown publish date.">Missing dates</th>
+              <th className="px-3 py-2 font-medium text-right" title="Extraction failures (blocked pages, timeouts, parse errors).">Errors</th>
             </tr>
           </thead>
           <tbody>

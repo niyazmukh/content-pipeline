@@ -1,11 +1,16 @@
 import React from 'react';
-import type { OutlinePayload, StoryCluster } from '../shared/types';
+import type { StoryCluster } from '../shared/types';
 
-const StoryClusters: React.FC<{ clusters: StoryCluster[]; outline: OutlinePayload | null }> = ({ clusters }) => {
+const StoryClusters: React.FC<{ clusters: StoryCluster[] }> = ({ clusters }) => {
   const top = clusters.slice(0, 12);
   return (
     <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow">
-      <h2 className="text-lg font-semibold text-slate-200">Story clusters</h2>
+      <h2
+        className="text-lg font-semibold text-slate-200"
+        title="Clusters group similar stories together to reduce repetition and improve coverage."
+      >
+        Story clusters
+      </h2>
       <p className="text-sm text-slate-400 mt-1">Top {top.length} clusters (by score).</p>
       <div className="mt-4 space-y-3">
         {top.map((cluster) => (
@@ -22,8 +27,8 @@ const StoryClusters: React.FC<{ clusters: StoryCluster[]; outline: OutlinePayloa
                 </a>
                 <div className="text-xs text-slate-400 mt-1">
                   {cluster.representative.sourceName ?? cluster.representative.sourceHost}
-                  {cluster.representative.publishedAt ? ` • ${cluster.representative.publishedAt.split('T')[0]}` : ''}
-                  {` • ${cluster.members.length + 1} articles`}
+                  {cluster.representative.publishedAt ? ` - ${cluster.representative.publishedAt.split('T')[0]}` : ''}
+                  {` - ${cluster.members.length + 1} articles`}
                 </div>
               </div>
               <div className="text-xs text-slate-400 whitespace-nowrap">
@@ -45,4 +50,3 @@ const StoryClusters: React.FC<{ clusters: StoryCluster[]; outline: OutlinePayloa
 };
 
 export default StoryClusters;
-
