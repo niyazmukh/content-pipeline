@@ -36,33 +36,38 @@ export interface OutlineRunResult {
   clusters: StoryCluster[];
 }
 
-export const runPipelineToOutline = async ({
+type RetrievalRunResult = {
+  runId: string;
+  recencyHours: number;
+  clusters: StoryCluster[];
+  metrics?: unknown;
+};
+
+const runPipelineToClusters = async ({
   topic,
   recencyHours,
   onStageEvent,
-}: RunAgentOptions): Promise<OutlineRunResult> => {
+}: RunAgentOptions): Promise<RetrievalRunResult> => {
   const params = new URLSearchParams();
   params.set('topic', topic);
   if (typeof recencyHours === 'number' && Number.isFinite(recencyHours)) {
     params.set('recencyHours', String(recencyHours));
   }
-  const url = `${API_BASE_URL}/run-agent-stream?${params.toString()}`;
-  return streamSseRequest<OutlineRunResult>({
+  const url = `${API_BASE_URL}/retrieve-stream?${params.toString()}`;
+  return streamSseRequest<RetrievalRunResult>({
     url,
     method: 'GET',
     headers: buildAuthHeaders(),
     mapResult: (event, payload) => {
-      if (event === 'stage-event' && isStageEvent(payload)) {
-        if (payload.stage === 'outline' && payload.status === 'success') {
-          const data = payload.data as Partial<OutlineRunResult> | undefined;
-          if (data?.outline && Array.isArray(data.clusters) && typeof data.recencyHours === 'number') {
-            return {
-              runId: payload.runId,
-              recencyHours: data.recencyHours,
-              outline: data.outline,
-              clusters: data.clusters,
-            };
-          }
+      if (event === 'retrieval-result' && payload && typeof payload === 'object') {
+        const data = payload as Partial<RetrievalRunResult>;
+        if (typeof data.runId === 'string' && typeof data.recencyHours === 'number' && Array.isArray(data.clusters)) {
+          return {
+            runId: data.runId,
+            recencyHours: data.recencyHours,
+            clusters: data.clusters,
+            metrics: (data as any).metrics,
+          };
         }
       }
       return undefined;
@@ -73,6 +78,62 @@ export const runPipelineToOutline = async ({
       }
     },
   });
+};
+
+const generateOutlineFromClusters = async (args: {
+  runId: string;
+  topic: string;
+  clusters: StoryCluster[];
+  recencyHours: number;
+  onStageEvent?: (event: StageEvent<unknown>) => void;
+}): Promise<{ runId: string; recencyHours: number; outline: OutlinePayload }> => {
+  const url = `${API_BASE_URL}/generate-outline-stream`;
+  return streamSseRequest<{ runId: string; recencyHours: number; outline: OutlinePayload }>({
+    url,
+    body: {
+      runId: args.runId,
+      topic: args.topic,
+      recencyHours: args.recencyHours,
+      clusters: args.clusters,
+    },
+    headers: buildAuthHeaders(),
+    mapResult: (event, payload) => {
+      if (event === 'outline-result' && payload && typeof payload === 'object') {
+        const data = payload as any;
+        if (typeof data.runId === 'string' && typeof data.recencyHours === 'number' && data.outline) {
+          return { runId: data.runId, recencyHours: data.recencyHours, outline: data.outline as OutlinePayload };
+        }
+      }
+      return undefined;
+    },
+    onStageEvent: (payload) => {
+      if (args.onStageEvent && isStageEvent(payload)) {
+        args.onStageEvent(payload);
+      }
+    },
+  });
+};
+
+export const runPipelineToOutline = async ({
+  topic,
+  recencyHours,
+  onStageEvent,
+}: RunAgentOptions): Promise<OutlineRunResult> => {
+  const retrieval = await runPipelineToClusters({ topic, recencyHours, onStageEvent });
+  const outline = await generateOutlineFromClusters({
+    runId: retrieval.runId,
+    topic,
+    clusters: retrieval.clusters,
+    recencyHours: retrieval.recencyHours,
+    onStageEvent,
+  });
+
+  return {
+    runId: outline.runId,
+    recencyHours: outline.recencyHours,
+    outline: outline.outline,
+    clusters: retrieval.clusters,
+  };
 };
 
 interface TargetedResearchPayload {

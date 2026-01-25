@@ -2,6 +2,8 @@ import type { SseStream } from '../../shared/sse';
 import { getPublicConfig } from '../../shared/config';
 import { createNoopArtifactStore } from '../../shared/artifacts';
 import { handleRunOutlineStream } from '../../server/pipeline/runOutlineStream';
+import { handleRunRetrievalStream } from '../../server/pipeline/runRetrievalStream';
+import { handleGenerateOutlineStream } from '../../server/pipeline/generateOutlineStream';
 import { handleGenerateArticleStream } from '../../server/pipeline/generateArticleStream';
 import { handleGenerateImagePromptStream } from '../../server/pipeline/generateImagePromptStream';
 import { handleTargetedResearchStream } from '../../server/pipeline/targetedResearchStream';
@@ -170,6 +172,70 @@ export default {
       handleRunOutlineStream({
         topic,
         recencyHoursOverride: Number.isFinite(recencyHoursOverride) ? recencyHoursOverride : undefined,
+        config,
+        stream: sse,
+        store,
+        signal: sse.controller.signal,
+      }).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        const isSubrequest = message.toLowerCase().includes('too many subrequests');
+        sse.sendJson('fatal', {
+          error: isSubrequest
+            ? `${message} (Tip: refresh the UI; the pipeline now splits retrieval + outline into separate requests to avoid this Cloudflare limit.)`
+            : message,
+        });
+        sse.close();
+      });
+
+      return new Response(stream, { headers: sseHeaders(origin) });
+    }
+
+    if (url.pathname === '/api/retrieve-stream' && request.method === 'GET') {
+      const missing = ensureGeminiKey(config);
+      if (missing) return missing;
+
+      const topic = String(url.searchParams.get('topic') || url.searchParams.get('topicQuery') || '').trim();
+      if (!topic) {
+        return jsonResponse({ error: 'Missing topic query' }, { status: 400 });
+      }
+
+      const recencyHoursRaw = url.searchParams.get('recencyHours');
+      const recencyHoursOverride = recencyHoursRaw ? Number(recencyHoursRaw) : undefined;
+
+      const { stream, sse } = createWorkerSseStream({
+        heartbeatMs: config.server.heartbeatIntervalMs,
+        label: 'retrieve',
+      });
+      bindAbort(request, sse);
+
+      handleRunRetrievalStream({
+        topic,
+        recencyHoursOverride: Number.isFinite(recencyHoursOverride) ? recencyHoursOverride : undefined,
+        config,
+        stream: sse,
+        store,
+        signal: sse.controller.signal,
+      }).catch((error) => {
+        sse.sendJson('fatal', { error: error instanceof Error ? error.message : String(error) });
+        sse.close();
+      });
+
+      return new Response(stream, { headers: sseHeaders(origin) });
+    }
+
+    if (url.pathname === '/api/generate-outline-stream' && request.method === 'POST') {
+      const missing = ensureGeminiKey(config);
+      if (missing) return missing;
+
+      const body = await request.json().catch(() => null);
+      const { stream, sse } = createWorkerSseStream({
+        heartbeatMs: config.server.heartbeatIntervalMs,
+        label: 'generate-outline',
+      });
+      bindAbort(request, sse);
+
+      handleGenerateOutlineStream({
+        body,
         config,
         stream: sse,
         store,

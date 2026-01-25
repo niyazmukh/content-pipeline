@@ -7,6 +7,8 @@ import fs from 'node:fs/promises';
 import { loadConfig, getPublicConfig } from './config/config';
 import { createSseStream } from './http/sse';
 import { handleRunOutlineStream } from './pipeline/runOutlineStream';
+import { handleRunRetrievalStream } from './pipeline/runRetrievalStream';
+import { handleGenerateOutlineStream } from './pipeline/generateOutlineStream';
 import { handleGenerateArticleStream } from './pipeline/generateArticleStream';
 import { handleGenerateImagePromptStream } from './pipeline/generateImagePromptStream';
 import { createFsArtifactStore } from './persistence/fsStore';
@@ -163,6 +165,49 @@ app.get('/api/run-agent-stream', async (req: Request, res: Response) => {
   await handleRunOutlineStream({
     topic,
     recencyHoursOverride,
+    config: requestConfig,
+    stream,
+    store,
+    signal: stream.controller.signal,
+  });
+});
+
+app.get('/api/retrieve-stream', async (req: Request, res: Response) => {
+  const topic = String(req.query.topic ?? req.query.topicQuery ?? '').trim();
+  const stream = createSseStream(res, {
+    heartbeatMs: config.server.heartbeatIntervalMs,
+    label: 'retrieve',
+  });
+
+  if (!topic) {
+    stream.sendJson('fatal', { error: 'Missing topic query' });
+    stream.close();
+    return;
+  }
+
+  const recencyHoursOverride = parseRecencyHours(req.query.recencyHours, config.recencyHours);
+  const requestConfig = applyRequestConfigOverrides(config, req);
+
+  await handleRunRetrievalStream({
+    topic,
+    recencyHoursOverride,
+    config: requestConfig,
+    stream,
+    store,
+    signal: stream.controller.signal,
+  });
+});
+
+app.post('/api/generate-outline-stream', async (req: Request, res: Response) => {
+  const stream = createSseStream(res, {
+    heartbeatMs: config.server.heartbeatIntervalMs,
+    label: 'generate-outline',
+  });
+
+  const requestConfig = applyRequestConfigOverrides(config, req);
+
+  await handleGenerateOutlineStream({
+    body: req.body,
     config: requestConfig,
     stream,
     store,
