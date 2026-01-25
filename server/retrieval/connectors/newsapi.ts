@@ -152,37 +152,48 @@ export const fetchNewsApiCandidates = async (
   if (isStructured) {
     primaryQuery = sanitizeForNewsApi(query);
     // Fallback: try to extract keywords and use implicit AND
-    const rawTerms = deriveLooseTerms(query, { maxTerms: 6, maxTokensPerTerm: 3 });
+    const rawTerms = deriveLooseTerms(query, { maxTerms: 8, maxTokensPerTerm: 6 });
     const cleanedTerms = rawTerms.map(sanitizeForNewsApi).filter(Boolean);
     fallbackQuery = cleanedTerms.slice(0, 3).join(' ');
   } else {
-    const rawTerms = deriveLooseTerms(query, { maxTerms: 6, maxTokensPerTerm: 3 });
+    // Variant 1: full sanitized string (lets NewsAPI decide how to interpret it).
+    primaryQuery = sanitizeForNewsApi(query);
+
+    // Variant 2: OR of a few extracted terms/phrases (helps for "A vs B", "A with a hint of B", etc.).
+    const rawTerms = deriveLooseTerms(query, { maxTerms: 8, maxTokensPerTerm: 6 });
     const cleanedTerms = rawTerms.map(sanitizeForNewsApi).filter(Boolean);
+    const phraseOr = cleanedTerms
+      .slice(0, 6)
+      .map((term) => (/\s/.test(term) ? `"${term}"` : term))
+      .filter(Boolean)
+      .join(' OR ');
 
-    const phraseParts: string[] = [];
-    for (const term of cleanedTerms.slice(0, 4)) {
-      if (!term) continue;
-      if (/\s/.test(term)) {
-        phraseParts.push(`"${term}"`);
-      } else {
-        phraseParts.push(term);
-      }
-    }
+    // Variant 3: OR of individual tokens (broad fallback if the phrase version is too strict).
+    const tokens = Array.from(
+      new Set(
+        cleanedTerms
+          .flatMap((term) => term.split(/\s+/))
+          .map((t) => t.trim())
+          .filter((t) => t.length >= 3),
+      ),
+    ).slice(0, 12);
+    const tokenOr = tokens.join(' OR ');
 
-    primaryQuery =
-      phraseParts.length > 0 ? phraseParts.join(' OR ') : sanitizeForNewsApi(query);
-
-    const fallbackTerms = cleanedTerms.slice(0, 3);
-    fallbackQuery = fallbackTerms.length > 0 ? fallbackTerms.join(' ') : primaryQuery;
+    fallbackQuery = phraseOr || tokenOr || primaryQuery;
   }
 
   const queryVariants = Array.from(new Set([primaryQuery, fallbackQuery].filter(Boolean)));
 
   let lastError: Error | null = null;
   try {
-    for (const variant of queryVariants) {
+    for (let i = 0; i < queryVariants.length; i += 1) {
+      const variant = queryVariants[i];
       try {
         const result = await attemptFetch(variant);
+        // If we got zero results and have another variant to try, keep going.
+        if (result.items.length === 0 && i < queryVariants.length - 1) {
+          continue;
+        }
         return {
           provider: 'newsapi',
           fetchedAt: new Date().toISOString(),

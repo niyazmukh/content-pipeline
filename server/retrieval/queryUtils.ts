@@ -68,8 +68,20 @@ const cleanSegment = (segment: string, maxTokens: number): string | null => {
   if (!tokens.length) {
     return null;
   }
-  const filtered = tokens.filter((token) => !BASE_STOPWORDS.has(token)).slice(0, maxTokens);
-  const chosen = filtered.length ? filtered : tokens.slice(0, maxTokens);
+  const filtered = tokens.filter((token) => !BASE_STOPWORDS.has(token));
+  const dedupe = (input: string[]) => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const token of input) {
+      if (seen.has(token)) continue;
+      seen.add(token);
+      out.push(token);
+      if (out.length >= maxTokens) break;
+    }
+    return out;
+  };
+
+  const chosen = dedupe(filtered.length ? filtered : tokens);
   const value = chosen.join(' ').trim();
   return value.length ? value : null;
 };
@@ -92,7 +104,20 @@ const splitQuerySegments = (raw: string): string[] => {
     .split(/\s+OR\s+|\s+or\s+|,\s*|\s*\|\|\s*|\s*\|\s*/g)
     .map((part) => part.trim())
     .filter(Boolean)
-    .forEach((part) => segments.push(part));
+    .forEach((part) => {
+      // Extra splitting for common "two-topic" phrasing in natural language.
+      // This helps fallbacks build sensible OR queries when the LLM rewrite fails.
+      const further = part
+        .split(/\bwith (?:a )?(?:hint|touch|dash|sprinkle) of\b/gi)
+        .flatMap((chunk) => chunk.split(/\bversus\b|\bvs\.?\b/gi))
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (further.length) {
+        segments.push(...further);
+      } else {
+        segments.push(part);
+      }
+    });
 
   if (!segments.length) {
     segments.push(raw.trim());

@@ -317,21 +317,93 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="mt-6 border-t border-slate-800 pt-4 text-sm text-slate-300">
-            <h3 className="font-semibold mb-2">Getting API keys (quick guide)</h3>
-            <ol className="list-decimal list-inside space-y-2 text-slate-400">
-              <li>
-                Gemini: open <a className="text-blue-400 hover:text-blue-300" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Google AI Studio API keys</a>, click “Create API key”, copy it into the Gemini field.
-              </li>
-              <li>
-                NewsAPI: open <a className="text-blue-400 hover:text-blue-300" href="https://newsapi.org/register" target="_blank" rel="noreferrer">newsapi.org/register</a>, create a free account, then copy your key from the dashboard.
-              </li>
-              <li>
-                EventRegistry: open <a className="text-blue-400 hover:text-blue-300" href="https://eventregistry.org/register" target="_blank" rel="noreferrer">eventregistry.org/register</a>, sign up, then copy your API key from your profile page.
-              </li>
-              <li>
-                Google CSE: create a search engine at <a className="text-blue-400 hover:text-blue-300" href="https://programmablesearchengine.google.com/" target="_blank" rel="noreferrer">programmablesearchengine.google.com</a>, then enable the Custom Search API in Google Cloud and copy both the API key and the Search Engine ID (cx).
-              </li>
-            </ol>
+            <details className="group">
+              <summary className="cursor-pointer select-none font-semibold text-slate-200 flex items-center justify-between">
+                <span>Getting API keys</span>
+                <span className="text-xs text-slate-400 group-open:hidden">Show</span>
+                <span className="text-xs text-slate-400 hidden group-open:inline">Hide</span>
+              </summary>
+              <div className="mt-3 text-slate-400 space-y-4">
+                <p className="text-sm">
+                  Leave all fields blank to use the default backend keys. If you paste your own keys, they stay in your browser (localStorage) and are sent with each request.
+                </p>
+
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Quick links</div>
+                  <ol className="mt-2 list-decimal list-inside space-y-2">
+                    <li>
+                      Gemini API key: <a className="text-blue-400 hover:text-blue-300" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">AI Studio → API keys</a>
+                    </li>
+                    <li>
+                      NewsAPI key: <a className="text-blue-400 hover:text-blue-300" href="https://newsapi.org/register" target="_blank" rel="noreferrer">NewsAPI → Register</a>
+                    </li>
+                    <li>
+                      EventRegistry key: <a className="text-blue-400 hover:text-blue-300" href="https://eventregistry.org/register" target="_blank" rel="noreferrer">EventRegistry → Register</a>
+                    </li>
+                    <li>
+                      Google CSE: <a className="text-blue-400 hover:text-blue-300" href="https://programmablesearchengine.google.com/" target="_blank" rel="noreferrer">Programmable Search Engine</a>
+                    </li>
+                  </ol>
+                </div>
+
+                <details className="border border-slate-800 rounded-lg p-4 bg-slate-950/30">
+                  <summary className="cursor-pointer select-none font-semibold text-slate-200">Gemini (extended guide)</summary>
+                  <div className="mt-3 space-y-2">
+                    <ol className="list-decimal list-inside space-y-2">
+                      <li>Open <a className="text-blue-400 hover:text-blue-300" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">AI Studio → API keys</a>.</li>
+                      <li>Sign in with your Google account (if prompted).</li>
+                      <li>Click “Create API key”, then copy the key.</li>
+                      <li>Paste it into “Gemini API key” above.</li>
+                    </ol>
+                    <p className="text-xs text-slate-500">
+                      Reference: <a className="text-blue-400 hover:text-blue-300" href="https://ai.google.dev/gemini-api/docs/api-key" target="_blank" rel="noreferrer">Gemini API key docs</a>.
+                    </p>
+                  </div>
+                </details>
+
+                <details className="border border-slate-800 rounded-lg p-4 bg-slate-950/30">
+                  <summary className="cursor-pointer select-none font-semibold text-slate-200">NewsAPI (extended guide)</summary>
+                  <div className="mt-3 space-y-2">
+                    <ol className="list-decimal list-inside space-y-2">
+                      <li>Open <a className="text-blue-400 hover:text-blue-300" href="https://newsapi.org/register" target="_blank" rel="noreferrer">newsapi.org/register</a> and create an account.</li>
+                      <li>After signing in, open your NewsAPI dashboard and copy your API key.</li>
+                      <li>Paste it into “NewsAPI key” above.</li>
+                    </ol>
+                    <p className="text-xs text-slate-500">
+                      Reference: <a className="text-blue-400 hover:text-blue-300" href="https://newsapi.org/docs" target="_blank" rel="noreferrer">NewsAPI docs</a> (endpoint used: <a className="text-blue-400 hover:text-blue-300" href="https://newsapi.org/docs/endpoints/everything" target="_blank" rel="noreferrer">/v2/everything</a>).
+                    </p>
+                  </div>
+                </details>
+
+                <details className="border border-slate-800 rounded-lg p-4 bg-slate-950/30">
+                  <summary className="cursor-pointer select-none font-semibold text-slate-200">EventRegistry (extended guide)</summary>
+                  <div className="mt-3 space-y-2">
+                    <ol className="list-decimal list-inside space-y-2">
+                      <li>Open <a className="text-blue-400 hover:text-blue-300" href="https://eventregistry.org/register" target="_blank" rel="noreferrer">eventregistry.org/register</a> and create an account.</li>
+                      <li>After signing in, find your API key in your profile / account settings.</li>
+                      <li>Paste it into “EventRegistry key” above.</li>
+                    </ol>
+                    <p className="text-xs text-slate-500">
+                      Reference: <a className="text-blue-400 hover:text-blue-300" href="https://eventregistry.org/documentation" target="_blank" rel="noreferrer">EventRegistry documentation</a> (endpoint used: <code className="text-slate-300">/api/v1/article/getArticles</code>).
+                    </p>
+                  </div>
+                </details>
+
+                <details className="border border-slate-800 rounded-lg p-4 bg-slate-950/30">
+                  <summary className="cursor-pointer select-none font-semibold text-slate-200">Google CSE (extended guide)</summary>
+                  <div className="mt-3 space-y-2">
+                    <ol className="list-decimal list-inside space-y-2">
+                      <li>Create a search engine at <a className="text-blue-400 hover:text-blue-300" href="https://programmablesearchengine.google.com/" target="_blank" rel="noreferrer">Programmable Search Engine</a>.</li>
+                      <li>Copy the “Search engine ID” (also called <code className="text-slate-300">cx</code>) and paste it into “Google CSE Search Engine ID (cx)”.</li>
+                      <li>In Google Cloud, enable the “Custom Search API”, create an API key, and paste it into “Google CSE API key”.</li>
+                    </ol>
+                    <p className="text-xs text-slate-500">
+                      Reference: <a className="text-blue-400 hover:text-blue-300" href="https://developers.google.com/custom-search/v1/overview" target="_blank" rel="noreferrer">Custom Search JSON API</a>.
+                    </p>
+                  </div>
+                </details>
+              </div>
+            </details>
           </div>
         </section>
 
