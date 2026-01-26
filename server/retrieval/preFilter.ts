@@ -3,6 +3,8 @@
  * Apply cheap heuristics to exclude low-quality candidates early.
  */
 
+import { tokenizeForRelevance } from './queryUtils';
+
 /**
  * Banned URL path patterns that typically don't contain article content.
  */
@@ -54,29 +56,24 @@ const MIN_SNIPPET_LENGTH = 30;
  * Quick relevance check: compute token overlap between query and content.
  */
 const computeQuickRelevance = (query: string, title: string, snippet: string | null): number => {
-  const queryTokens = new Set(
-    query
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter((token) => token.length > 2)
-  );
+  const queryTokens = tokenizeForRelevance(query, { maxTokens: 24 });
 
   // If the query is too short (0-1 meaningful tokens), the overlap signal is too noisy.
   // Don't reject candidates based on relevance in that case.
-  if (queryTokens.size < 2) {
-    return 1.0; // No query tokens to match, pass through
+  if (queryTokens.length < 2) {
+    return 1.0;
   }
 
-  const contentText = `${title} ${snippet || ''}`.toLowerCase();
+  const contentTokens = new Set(tokenizeForRelevance(`${title} ${snippet || ''}`, { maxTokens: 128 }));
+
   let matches = 0;
   for (const token of queryTokens) {
-    if (contentText.includes(token)) {
-      matches++;
+    if (contentTokens.has(token)) {
+      matches += 1;
     }
   }
 
-  return matches / queryTokens.size;
+  return matches / queryTokens.length;
 };
 
 export interface PreFilterResult {

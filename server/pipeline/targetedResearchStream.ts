@@ -19,6 +19,7 @@ type RequestBody = {
   topic: string;
   outlineIndex: number;
   point: string;
+  summary?: string;
   recencyHours?: number;
 };
 
@@ -28,7 +29,8 @@ const isRequestBody = (value: unknown): value is RequestBody =>
   typeof (value as RequestBody).topic === 'string' &&
   typeof (value as RequestBody).outlineIndex === 'number' &&
   Number.isFinite((value as RequestBody).outlineIndex) &&
-  typeof (value as RequestBody).point === 'string';
+  typeof (value as RequestBody).point === 'string' &&
+  ((value as RequestBody).summary == null || typeof (value as RequestBody).summary === 'string');
 
 export const handleTargetedResearchStream = async ({
   body,
@@ -56,7 +58,7 @@ export const handleTargetedResearchStream = async ({
 
     const result = await performTargetedResearch({
       runId: body.runId,
-      outlinePoint: { index: body.outlineIndex, text: body.point },
+      outlinePoint: { index: body.outlineIndex, text: body.point, summary: body.summary },
       topic: body.topic,
       recencyHoursOverride,
       config,
@@ -95,4 +97,3 @@ export const handleTargetedResearchStream = async ({
     stream.close();
   }
 };
-

@@ -246,7 +246,12 @@ export const generateOutlineFromClusters = async ({
   const distinctClusterCount = clusters.length;
   const requiredPoints = Math.max(1, distinctClusterCount >= 5 ? 5 : distinctClusterCount);
   const requiredClusterCoverage = Math.max(1, Math.min(4, distinctClusterCount));
-  const requiredUniqueDates = 0;
+  const availableDates = new Set(
+    clusters
+      .map((cluster) => cluster.representative.publishedAt?.split('T')[0] || null)
+      .filter((d): d is string => Boolean(d)),
+  );
+  const requiredUniqueDates = availableDates.size ? Math.min(3, availableDates.size) : 0;
   const recencyWindow = describeRecencyWindow(recencyHours);
   const basePrompt = promptTemplate
     .replaceAll('{TOPIC}', topic)

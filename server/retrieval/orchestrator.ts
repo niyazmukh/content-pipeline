@@ -9,6 +9,7 @@ import { evaluateArticle } from './filters';
 import { deduplicateArticles } from './dedup';
 import { rankAndClusterArticles } from './ranking';
 import { Semaphore } from '../utils/concurrency';
+import { tokenizeForRelevance } from './queryUtils';
 import type { ArtifactStore } from '../../shared/artifacts';
 import type {
   ProviderName,
@@ -34,13 +35,6 @@ interface CandidateRecord extends ConnectorArticle {
   provider: ProviderName;
 }
 
-const tokenize = (text: string): string[] =>
-  text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean);
-
 const uniquenessKey = (url: string): string => {
   try {
     const parsed = new URL(url);
@@ -54,7 +48,7 @@ const uniquenessKey = (url: string): string => {
 
 export const retrieveUnified = async (
   runId: string,
-  query: string | { google?: string; newsapi?: string; eventregistry?: string[] },
+  query: string | { main?: string; google?: string; newsapi?: string; eventregistry?: string[] },
   config: AppConfig,
   options: RetrievalOrchestratorOptions,
 ): Promise<RetrievalOrchestratorResult> => {
@@ -76,17 +70,23 @@ export const retrieveUnified = async (
     options.signal.addEventListener('abort', abortListener, { once: true });
   }
 
-  // Determine specific queries for each provider
+  // Determine specific queries for each provider.
   // Use a representative query string for logging/metadata if we have a map.
   // If a provider-specific query is missing, fall back to this string so we don't accidentally
   // disable a connector by passing an empty query (common with LLM-built query maps).
-  const mainQueryString = typeof query === 'string' ? query : (query.google || query.newsapi || 'multi-provider-query');
+  const mainQueryString =
+    typeof query === 'string'
+      ? query
+      : (query.main ||
+          query.google ||
+          query.newsapi ||
+          (query.eventregistry && query.eventregistry.length ? query.eventregistry.join(' ') : 'multi-provider-query'));
 
   const googleQuery = typeof query === 'string' ? query : (query.google || mainQueryString);
   const newsApiQuery = typeof query === 'string' ? query : (query.newsapi || mainQueryString);
   const eventRegistryQuery =
     typeof query === 'string' ? [query] : (query.eventregistry && query.eventregistry.length ? query.eventregistry : [mainQueryString]);
-  const queryTokens = tokenize(mainQueryString);
+  const queryTokens = tokenizeForRelevance(mainQueryString, { maxTokens: 24 });
 
   const filterOptions = {
     recencyHours,

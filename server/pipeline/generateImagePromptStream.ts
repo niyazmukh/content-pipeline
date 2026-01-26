@@ -21,6 +21,18 @@ interface ImagePromptRequestBody {
 const isImagePromptRequest = (value: unknown): value is ImagePromptRequestBody =>
   !!value && typeof (value as ImagePromptRequestBody).runId === 'string' && typeof (value as ImagePromptRequestBody).article === 'string';
 
+const renderSlideText = (slide: { title: string; visualStrategy: string; layout?: string; prompt: string; negativePrompt?: string }, idx: number): string => {
+  const lines = [
+    `Slide ${idx + 1}: ${slide.title}`,
+    `Strategy: ${slide.visualStrategy}${slide.layout ? ` | Layout: ${slide.layout}` : ''}`,
+    slide.prompt,
+  ];
+  if (slide.negativePrompt) {
+    lines.push(`Negative: ${slide.negativePrompt}`);
+  }
+  return lines.join('\n');
+};
+
 export const handleGenerateImagePromptStream = async ({
   body,
   config,
@@ -49,7 +61,8 @@ export const handleGenerateImagePromptStream = async ({
 
     await store.saveRunArtifact(body.runId, 'image_prompt', result);
 
-    stage.success({ data: { runId: body.runId, prompt: result.prompt } });
+    const prompt = result.slides.map((slide, idx) => renderSlideText(slide, idx)).join('\n\n');
+    stage.success({ data: { runId: body.runId, slides: result.slides, prompt } });
     stream.close();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

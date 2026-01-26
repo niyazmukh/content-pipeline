@@ -2,16 +2,16 @@ import type { AppConfig } from '../../shared/config';
 import type { Logger } from '../obs/logger';
 import type { StoryCluster, RetrievalBatch } from '../retrieval/types';
 import { retrieveUnified } from '../retrieval/orchestrator';
-import { generateSearchQueriesForPoint } from './searchQueries';
-type RetrievalResult = ReturnType<typeof retrieveUnified> extends Promise<infer T> ? T : never;
-import { rewriteTopicToQuery } from './topicQuery';
 import type { ArtifactStore } from '../../shared/artifacts';
+import { TopicAnalysisService } from '../services/topicAnalysisService';
+import { tokenizeForRelevance } from '../retrieval/queryUtils';
 
 export interface TargetedResearchArgs {
   runId: string;
   outlinePoint: {
     index: number;
     text: string;
+    summary?: string;
   };
   topic: string;
   recencyHoursOverride?: number;
@@ -37,75 +37,6 @@ export interface TargetedResearchResult {
   digest: string;
   citations: EvidenceSnippet[];
 }
-
-const rewriteCache = new Map<string, string>();
-const rewriteInflight = new Map<string, Promise<string>>();
-
-const trimCache = () => {
-  const MAX_ENTRIES = 32;
-  if (rewriteCache.size <= MAX_ENTRIES) {
-    return;
-  }
-  const iterator = rewriteCache.keys();
-  while (rewriteCache.size > MAX_ENTRIES) {
-    const next = iterator.next();
-    if (next.done) {
-      break;
-    }
-    rewriteCache.delete(next.value);
-  }
-};
-
-const normalizeQueryWithRewrite = async (
-  rawQuery: string,
-  {
-    config,
-    logger,
-    signal,
-  }: {
-    config: AppConfig;
-    logger: Logger;
-    signal?: AbortSignal;
-  },
-): Promise<string> => {
-  const cleaned = rawQuery.replace(/\s+/g, ' ').trim();
-  if (!cleaned) {
-    return '';
-  }
-
-  const cached = rewriteCache.get(cleaned);
-  if (cached) {
-    return cached;
-  }
-
-  let inflight = rewriteInflight.get(cleaned);
-  if (!inflight) {
-    inflight = rewriteTopicToQuery({
-      rawTopic: cleaned,
-      config,
-      logger,
-      signal,
-    });
-    rewriteInflight.set(cleaned, inflight);
-  }
-
-  try {
-    const rewritten = (await inflight)?.replace(/\s+/g, ' ').trim() || '';
-    rewriteInflight.delete(cleaned);
-    if (rewritten) {
-      rewriteCache.set(cleaned, rewritten);
-    }
-    trimCache();
-    return rewritten;
-  } catch (error) {
-    rewriteInflight.delete(cleaned);
-    logger.warn('Targeted query rewrite failed; using raw query', {
-      query: cleaned,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return cleaned;
-  }
-};
 
 const formatDigest = (
   clusters: StoryCluster[],
@@ -143,6 +74,14 @@ const formatDigest = (
   return { digest, citations };
 };
 
+const countIntersection = (haystack: Set<string>, needles: Set<string>): number => {
+  let hits = 0;
+  for (const token of needles) {
+    if (haystack.has(token)) hits += 1;
+  }
+  return hits;
+};
+
 export const performTargetedResearch = async ({
   runId,
   outlinePoint,
@@ -154,91 +93,82 @@ export const performTargetedResearch = async ({
   signal,
 }: TargetedResearchArgs): Promise<TargetedResearchResult> => {
   const effectiveRecencyHours = recencyHoursOverride ?? config.recencyHours;
-  // Baseline query combines topic and point
-  const baselineQuery =
-    `${topic} ${outlinePoint.text}`.replace(/\s+/g, ' ').trim() || topic.trim() || outlinePoint.text;
+  const baselineQuery = [topic, outlinePoint.text, outlinePoint.summary]
+    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim() || topic.trim() || outlinePoint.text;
   logger.info('Running targeted research', { runId, outlineIndex: outlinePoint.index, point: outlinePoint.text });
 
-  // Try LLM-driven query expansion (proModel); fallback to baseline
-  let queries: string[] = [];
-  try {
-    queries = await generateSearchQueriesForPoint({
-      topic,
-      point: outlinePoint.text,
-      recencyHours: effectiveRecencyHours,
-      config,
-      logger,
-      signal,
-    });
-  } catch (err) {
-    logger.warn('Query expansion failed; falling back to baseline', { error: (err as Error).message });
-  }
-  if (!queries.length) {
-    queries = [baselineQuery];
-  } else {
-    // Always include the baseline as a safety net
-    queries = Array.from(new Set([baselineQuery, ...queries])).slice(0, 2);
-  }
+  const analysisService = new TopicAnalysisService(config, logger);
+  const analysis = await analysisService.analyze(baselineQuery, signal);
+  const queryMap = {
+    main: baselineQuery,
+    google: analysis.queries.google || baselineQuery,
+    newsapi: analysis.queries.newsapi || baselineQuery,
+    eventregistry:
+      Array.isArray(analysis.queries.eventregistry) && analysis.queries.eventregistry.length
+        ? analysis.queries.eventregistry
+        : [baselineQuery],
+  };
 
-  const normalizedQueries: string[] = [];
-  for (const raw of queries) {
-    const normalized =
-      (await normalizeQueryWithRewrite(raw, { config, logger, signal })) || raw.replace(/\s+/g, ' ').trim();
-    const finalQuery = normalized || raw;
-    if (!finalQuery || normalizedQueries.includes(finalQuery)) {
-      continue;
-    }
-    normalizedQueries.push(finalQuery);
-  }
-  if (!normalizedQueries.length) {
-    normalizedQueries.push(baselineQuery);
-  }
+  const retrievalResult = await retrieveUnified(runId, queryMap, config, {
+    signal,
+    minAccepted: Math.min(6, config.retrieval.minAccepted),
+    maxAttempts: Math.min(18, config.retrieval.maxAttempts),
+    maxCandidates: 36,
+    recencyHoursOverride,
+    logger,
+    store,
+  });
 
-  // Retrieve for each query (in parallel) and merge
-  const mergedClusters: StoryCluster[] = [];
-  const seenClusterIds = new Set<string>();
-  const batches: RetrievalBatch[] = [];
-
-  const retrievals = normalizedQueries.map((q, index) =>
-    retrieveUnified(runId, q, config, {
-      signal,
-      minAccepted: Math.min(6, config.retrieval.minAccepted),
-      maxAttempts: Math.min(18, config.retrieval.maxAttempts),
-      maxCandidates: 36,
-      recencyHoursOverride,
-      logger,
-      store,
-    })
-      .then((partial) => ({ index, partial }))
-      .catch((error) => {
-        logger.warn('Targeted query retrieval failed', {
-          runId,
-          query: q,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return null;
-      }),
+  const rankedClusters = retrievalResult.clusters.slice().sort((a, b) => b.score - a.score);
+  const baselineTokens = new Set(tokenizeForRelevance(baselineQuery, { maxTokens: 24 }));
+  const topicTokens = new Set(tokenizeForRelevance(topic, { maxTokens: 12 }));
+  const keywordTokens = new Set(
+    tokenizeForRelevance((analysis.keywords || []).filter(Boolean).join(' '), { maxTokens: 16 }),
   );
 
-  const resolved = (await Promise.all(retrievals))
-    .filter((entry): entry is { index: number; partial: RetrievalResult } => Boolean(entry))
-    .sort((a, b) => a.index - b.index);
+  const baselineSize = baselineTokens.size;
+  const baselineMinHits = baselineSize <= 4 ? 1 : baselineSize <= 8 ? 2 : 3;
 
-  for (const { partial } of resolved) {
-    batches.push(partial.batch);
-    for (const cluster of partial.clusters) {
-      if (!seenClusterIds.has(cluster.clusterId)) {
-        seenClusterIds.add(cluster.clusterId);
-        mergedClusters.push(cluster);
-      }
-    }
+  const passesStrictGate = (cluster: StoryCluster): boolean => {
+    const repText = `${cluster.representative.title} ${cluster.representative.excerpt || ''}`;
+    const repTokens = new Set(tokenizeForRelevance(repText, { maxTokens: 128 }));
+
+    const baselineHits = countIntersection(repTokens, baselineTokens);
+    const topicHits = topicTokens.size ? countIntersection(repTokens, topicTokens) : 0;
+    const keywordHits = keywordTokens.size ? countIntersection(repTokens, keywordTokens) : 0;
+
+    if (topicTokens.size && topicHits === 0) return false;
+    if (baselineHits < baselineMinHits) return false;
+    if (keywordTokens.size && keywordHits === 0) return false;
+    return true;
+  };
+
+  const passesFallbackGate = (cluster: StoryCluster): boolean => {
+    const repText = `${cluster.representative.title} ${cluster.representative.excerpt || ''}`;
+    const repTokens = new Set(tokenizeForRelevance(repText, { maxTokens: 128 }));
+
+    const baselineHits = countIntersection(repTokens, baselineTokens);
+    const topicHits = topicTokens.size ? countIntersection(repTokens, topicTokens) : 0;
+
+    if (topicTokens.size && topicHits === 0) return false;
+    return baselineHits >= Math.max(1, Math.min(2, baselineMinHits));
+  };
+
+  const strictClusters = rankedClusters.filter(passesStrictGate);
+  const topClusters = (strictClusters.length ? strictClusters : rankedClusters.filter(passesFallbackGate)).slice(0, 8);
+
+  if (logger && typeof logger.info === 'function') {
+    logger.info('Targeted research cluster gating', {
+      runId,
+      outlineIndex: outlinePoint.index,
+      totalClusters: rankedClusters.length,
+      strictAccepted: strictClusters.length,
+      finalAccepted: topClusters.length,
+    });
   }
-
-  // Keep a focused top set; representative.score already encapsulates ranking signals
-  const topClusters = mergedClusters
-    .slice()
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8);
 
   if (!topClusters.length) {
     logger.warn('Targeted research returned no recent clusters', {
@@ -250,30 +180,10 @@ export const performTargetedResearch = async ({
 
   const { digest, citations } = formatDigest(topClusters, effectiveRecencyHours);
 
-  // Pick the first batch as reference for persistence/metrics; this is advisory-only for the UI
-  const primaryBatch = batches[0] ?? ({
-    runId,
-    query: normalizedQueries[0] ?? baselineQuery,
-    recencyHours: effectiveRecencyHours,
-    fetchedAt: new Date().toISOString(),
-    articles: [],
-    metrics: {
-      candidateCount: 0,
-      preFiltered: 0,
-      attemptedExtractions: 0,
-      accepted: 0,
-      duplicatesRemoved: 0,
-      newestArticleHours: null,
-      oldestArticleHours: null,
-      perProvider: [],
-      extractionErrors: [],
-    },
-  } as unknown as RetrievalBatch);
-
   return {
     outlineIndex: outlinePoint.index,
-    prompt: normalizedQueries.join(' | '),
-    batch: primaryBatch,
+    prompt: queryMap.main,
+    batch: retrievalResult.batch,
     clusters: topClusters,
     digest,
     citations,

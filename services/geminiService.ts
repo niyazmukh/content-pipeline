@@ -4,6 +4,7 @@ import type {
   OutlinePayload,
   StoryCluster,
   EvidenceItem,
+  ImagePromptGenerationResult,
   ApiConfigResponse,
   ApiHealthResponse,
 } from '../shared/types';
@@ -141,6 +142,7 @@ interface TargetedResearchPayload {
   topic: string;
   outlineIndex: number;
   point: string;
+  summary?: string;
   recencyHours: number;
 }
 
@@ -214,15 +216,36 @@ interface ImagePromptPayload {
 
 export const generateImagePrompt = async (payload: ImagePromptPayload, onStageEvent?: (event: StageEvent<unknown>) => void) => {
   const url = `${API_BASE_URL}/generate-image-prompt-stream`;
-  return streamSseRequest<{ runId: string; prompt: string }>({
+  return streamSseRequest<ImagePromptGenerationResult>({
     url,
     body: { runId: payload.runId, article: payload.article },
     headers: buildAuthHeaders(),
     mapResult: (event, value) => {
       if (event === 'stage-event' && isStageEvent(value)) {
         if (value.stage === 'imagePrompt' && value.status === 'success' && value.data) {
-          const data = value.data as { prompt: string; runId: string };
-          return { runId: data.runId ?? payload.runId, prompt: data.prompt };
+          const data = value.data as any;
+          const runId = typeof data.runId === 'string' ? data.runId : payload.runId;
+          if (Array.isArray(data.slides)) {
+            return {
+              runId,
+              slides: data.slides as any,
+              prompt: typeof data.prompt === 'string' ? data.prompt : undefined,
+            };
+          }
+          if (typeof data.prompt === 'string') {
+            return {
+              runId,
+              slides: [
+                {
+                  title: 'Slide 1',
+                  visualStrategy: 'legacy',
+                  prompt: data.prompt,
+                },
+              ],
+              prompt: data.prompt,
+            };
+          }
+          throw new Error('Image prompt result missing slides');
         }
         if (value.stage === 'imagePrompt' && value.status === 'failure') {
           throw new Error(value.message || 'Image prompt generation failed');

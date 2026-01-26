@@ -245,13 +245,46 @@ const tokenize = (text: string): string[] =>
     .split(/\s+/)
     .filter(Boolean);
 
+const expandHyphenVariants = (token: string): string[] => {
+  const cleaned = token.trim();
+  if (!cleaned) return [];
+  if (!cleaned.includes('-')) return [cleaned];
+  const parts = cleaned.split('-').map((p) => p.trim()).filter(Boolean);
+  const joined = parts.join('');
+  return [cleaned, joined, ...parts].filter(Boolean);
+};
+
 const computeRelevance = (tokens: string[], queryTokens: string[]): number => {
   if (!tokens.length || !queryTokens.length) {
     return 0;
   }
-  const set = new Set(tokens);
-  const hits = queryTokens.reduce((count, token) => (set.has(token) ? count + 1 : count), 0);
-  return Number((hits / queryTokens.length).toFixed(3));
+
+  const tokenSet = new Set<string>();
+  for (const token of tokens) {
+    for (const variant of expandHyphenVariants(token)) {
+      tokenSet.add(variant);
+    }
+  }
+
+  const seenQuery = new Set<string>();
+  const normalizedQuery: string[] = [];
+  for (const token of queryTokens) {
+    for (const variant of expandHyphenVariants(token)) {
+      const cleaned = variant.trim();
+      if (!cleaned) continue;
+      const key = cleaned.toLowerCase();
+      if (seenQuery.has(key)) continue;
+      seenQuery.add(key);
+      normalizedQuery.push(cleaned);
+    }
+  }
+
+  if (!normalizedQuery.length) {
+    return 0;
+  }
+
+  const hits = normalizedQuery.reduce((count, token) => (tokenSet.has(token) ? count + 1 : count), 0);
+  return Number((hits / normalizedQuery.length).toFixed(3));
 };
 
 interface CachedOutcome {

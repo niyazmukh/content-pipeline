@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import type { ImagePromptSlide } from '../shared/types';
 
 type ArticlePayload = {
   title: string;
@@ -9,10 +10,10 @@ type ArticlePayload = {
 
 const ArticlePanel: React.FC<{
   article: ArticlePayload;
-  imagePrompt: string;
+  imagePrompts: ImagePromptSlide[];
   noveltyScore: number;
   warnings?: string[];
-}> = ({ article, imagePrompt, noveltyScore, warnings }) => {
+}> = ({ article, imagePrompts, noveltyScore, warnings }) => {
   const sources = useMemo(() => article.sources ?? [], [article.sources]);
 
   return (
@@ -42,10 +43,37 @@ const ArticlePanel: React.FC<{
       <h3 className="mt-5 text-xl font-bold text-slate-100">{article.title}</h3>
       <pre className="mt-4 whitespace-pre-wrap text-slate-200 leading-relaxed">{article.article}</pre>
 
-      {imagePrompt ? (
-        <div className="mt-6 border border-slate-800 rounded-lg p-4 bg-slate-950/40">
-          <div className="text-sm font-semibold text-slate-200">Image prompt</div>
-          <pre className="mt-2 text-sm text-slate-300 whitespace-pre-wrap">{imagePrompt}</pre>
+      {imagePrompts.length ? (
+        <div className="mt-6 border border-slate-800 rounded-lg p-4 bg-slate-950/40 space-y-3">
+          <div className="text-sm font-semibold text-slate-200">Image prompts ({imagePrompts.length} slide{imagePrompts.length === 1 ? '' : 's'})</div>
+          {imagePrompts.map((slide, idx) => (
+            <div key={`${slide.title}-${idx}`} className="border border-slate-800 rounded-lg p-3 bg-slate-950/30">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-slate-100">
+                  Slide {idx + 1}: {slide.title}
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-700 bg-slate-950/60 text-slate-300 uppercase tracking-wide">
+                  {slide.visualStrategy}
+                </span>
+              </div>
+              {slide.layout ? (
+                <div className="mt-2 text-xs text-slate-400">
+                  <span className="text-slate-500">Layout:</span> {slide.layout}
+                </div>
+              ) : null}
+              {slide.overlayText?.length ? (
+                <div className="mt-2 text-xs text-slate-400">
+                  <span className="text-slate-500">Overlay text:</span> {slide.overlayText.join(' • ')}
+                </div>
+              ) : null}
+              <pre className="mt-3 text-sm text-slate-200 whitespace-pre-wrap">{slide.prompt}</pre>
+              {slide.negativePrompt ? (
+                <div className="mt-2 text-xs text-slate-400">
+                  <span className="text-slate-500">Negatives:</span> {slide.negativePrompt}
+                </div>
+              ) : null}
+            </div>
+          ))}
         </div>
       ) : null}
 

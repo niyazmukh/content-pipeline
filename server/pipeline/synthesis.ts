@@ -283,15 +283,91 @@ export const synthesizeArticle = async ({
     }
 
     const { errors: bodyErrors, warnings: bodyWarnings } = validateArticleBody(coerced.article, {
-      minCitations: 6,
-      minExplicitDates: 1,
+      minCitations: 8,
+      minDistinctCitationIds: 6,
+      minNarrativeDates: 3,
+      requireKeyDevelopments: true,
+      minKeyDevelopmentsBullets: 5,
+      maxKeyDevelopmentsBullets: 7,
     });
     latestWarnings = bodyWarnings;
+
+    // Enforce overall word count contract (matches prompt); include Key developments section but exclude sources list.
+    const actualWordCount = toWordCount(coerced.article);
+    coerced.wordCount = actualWordCount;
+    const wordCountErrors: string[] = [];
+    if (actualWordCount < 400 || actualWordCount > 600) {
+      wordCountErrors.push(`Article length is ${actualWordCount} words; expected 400-600.`);
+    }
+
+    // Enforce that all citation IDs used exist in the provided Source Catalog.
+    const catalogIds = new Set(sourceCatalog.map((s) => s.id));
+    const catalogUrls = new Set(sourceCatalog.map((s) => s.url));
+    const missingCatalogIds: number[] = [];
+    const citationRe = /\[(\d+)]/g;
+    const usedCitationIds = new Set<number>();
+    let m: RegExpExecArray | null;
+    while ((m = citationRe.exec(coerced.article)) !== null) {
+      const n = Number(m[1]);
+      if (!Number.isFinite(n) || n <= 0) {
+        continue;
+      }
+      usedCitationIds.add(n);
+      if (!catalogIds.has(n)) {
+        missingCatalogIds.push(n);
+        if (missingCatalogIds.length >= 3) break;
+      }
+    }
+    const citationCatalogErrors =
+      missingCatalogIds.length > 0 ? [`Article references citation IDs not in Source Catalog: ${missingCatalogIds.join(', ')}`] : [];
+
+    const missingFromSourcesList = Array.from(usedCitationIds).filter(
+      (id) => !coerced.sources.some((s) => s.id === id),
+    );
+    const sourcesListErrors =
+      missingFromSourcesList.length > 0
+        ? [`Returned sources list is missing cited IDs: ${missingFromSourcesList.slice(0, 5).join(', ')}`]
+        : [];
+
+    const keyDevLines = coerced.article.split(/\r?\n/);
+    const keyDevIndex = keyDevLines.findIndex((line) => /^\s*key developments\b/i.test(line.trim()));
+    const keyDevUrlErrors: string[] = [];
+    if (keyDevIndex >= 0) {
+      const bulletLines = keyDevLines
+        .slice(keyDevIndex + 1)
+        .filter((line) => /^\s*[-*]\s+/.test(line));
+      const badUrls: string[] = [];
+      for (const bulletLine of bulletLines) {
+        const urlMatch = bulletLine.match(/\((https?:\/\/[^)]+)\)/);
+        if (!urlMatch) {
+          badUrls.push('missing-url');
+          if (badUrls.length >= 2) break;
+          continue;
+        }
+        const url = urlMatch[1].trim();
+        if (!catalogUrls.has(url)) {
+          badUrls.push(url);
+          if (badUrls.length >= 2) break;
+        }
+      }
+      if (badUrls.length) {
+        keyDevUrlErrors.push(
+          `Key developments contains URL(s) not present in Source Catalog: ${badUrls.join(', ')}`,
+        );
+      }
+    }
 
     // Competitor brand guardrails: allow neutral, cited mentions; block promotion or uncited mentions
     const brandErrors = validatePromotionPolicy(`${coerced.title}\n${coerced.article}`);
 
-    const fatalErrors = [...bodyErrors, ...brandErrors];
+    const fatalErrors = [
+      ...bodyErrors,
+      ...wordCountErrors,
+      ...citationCatalogErrors,
+      ...sourcesListErrors,
+      ...keyDevUrlErrors,
+      ...brandErrors,
+    ];
 
     if (fatalErrors.length) {
       errors = fatalErrors;

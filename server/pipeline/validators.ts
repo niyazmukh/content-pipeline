@@ -18,6 +18,13 @@ export const validateOutline = (outline: OutlinePayload, clusters: StoryCluster[
   }
   const clusterIds = new Set(clusters.map((cluster) => cluster.clusterId));
   const usedIds = new Set<string>();
+  const availableDates = new Set(
+    clusters
+      .map((cluster) => cluster.representative.publishedAt?.split('T')[0] || null)
+      .filter((d): d is string => Boolean(d)),
+  );
+  const requiredUniqueDates = availableDates.size ? Math.min(3, availableDates.size) : 0;
+  const usedDates = new Set<string>();
   const totalClusters = clusters.length;
   const requiredPoints = Math.max(1, totalClusters >= 5 ? 5 : totalClusters);
   const requiredDistinctClusters = Math.max(1, Math.min(4, totalClusters));
@@ -47,8 +54,15 @@ export const validateOutline = (outline: OutlinePayload, clusters: StoryCluster[
       for (const date of point.dates) {
         if (!isIsoDate(date)) {
           errors.push(`Outline item ${index + 1} has invalid date ${date}`);
+        } else {
+          usedDates.add(date);
         }
       }
+      if (requiredUniqueDates > 0 && point.dates.length === 0) {
+        errors.push(`Outline item ${index + 1} missing dates`);
+      }
+    } else if (requiredUniqueDates > 0) {
+      errors.push(`Outline item ${index + 1} missing dates`);
     }
   }
 
@@ -57,12 +71,20 @@ export const validateOutline = (outline: OutlinePayload, clusters: StoryCluster[
     errors.push(`Outline uses fewer than ${requiredDistinctClusters} ${label}`);
   }
 
+  if (requiredUniqueDates > 0 && usedDates.size < requiredUniqueDates) {
+    errors.push(`Outline includes ${usedDates.size} unique dates; expected at least ${requiredUniqueDates}`);
+  }
+
   return errors.length ? { ok: false, errors } : { ok: true, errors: [] };
 };
 
 export interface ArticleValidationOptions {
   minCitations: number;
-  minExplicitDates: number;
+  minDistinctCitationIds: number;
+  minNarrativeDates: number;
+  requireKeyDevelopments: boolean;
+  minKeyDevelopmentsBullets: number;
+  maxKeyDevelopmentsBullets?: number;
 }
 
 export interface ArticleBodyValidationResult {
@@ -74,19 +96,105 @@ export const validateArticleBody = (
   article: string,
   options: ArticleValidationOptions,
 ): ArticleBodyValidationResult => {
-  const citationMatches = article.match(/\[(\d+)]/g) || [];
-  const dateMatches = article.match(/\b\d{4}-\d{2}-\d{2}\b/g) || [];
+  const errors: string[] = [];
   const warnings: string[] = [];
 
-  if (citationMatches.length < options.minCitations) {
-    warnings.push(`Article contains ${citationMatches.length} citations; expected at least ${options.minCitations}`);
+  const citationIds: number[] = [];
+  const citationRe = /\[(\d+)]/g;
+  let match: RegExpExecArray | null;
+  while ((match = citationRe.exec(article)) !== null) {
+    const n = Number(match[1]);
+    if (Number.isFinite(n) && n > 0) {
+      citationIds.push(n);
+    }
   }
-  const uniqueDates = new Set(dateMatches);
-  if (uniqueDates.size < options.minExplicitDates) {
-    warnings.push(`Article contains ${uniqueDates.size} unique dates; expected at least ${options.minExplicitDates}`);
+  const distinctCitationIds = new Set(citationIds);
+
+  if (citationIds.length < options.minCitations) {
+    errors.push(`Article contains ${citationIds.length} citations; expected at least ${options.minCitations}`);
   }
 
-  return { errors: [], warnings };
+  if (distinctCitationIds.size < options.minDistinctCitationIds) {
+    errors.push(
+      `Article uses ${distinctCitationIds.size} distinct sources; expected at least ${options.minDistinctCitationIds}`,
+    );
+  }
+
+  const lines = article.split(/\r?\n/);
+  const keyDevelopmentsLineIndex = lines.findIndex((line) => /^\s*key developments\b/i.test(line.trim()));
+
+  const narrativeText = keyDevelopmentsLineIndex >= 0 ? lines.slice(0, keyDevelopmentsLineIndex).join('\n') : article;
+
+  const narrativeDates = new Set((narrativeText.match(/\b\d{4}-\d{2}-\d{2}\b/g) || []).map((d) => d.trim()));
+  if (narrativeDates.size < options.minNarrativeDates) {
+    errors.push(
+      `Article narrative contains ${narrativeDates.size} unique dates; expected at least ${options.minNarrativeDates}`,
+    );
+  }
+
+  // Narrative paragraph citation coverage (skip short headings)
+  const narrativeParagraphs = narrativeText
+    .split(/\r?\n\s*\r?\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  for (const paragraph of narrativeParagraphs) {
+    const wordCount = (paragraph.match(/\b\w+\b/g) || []).length;
+    if (wordCount < 8) {
+      continue;
+    }
+    if (!/\[\d+]/.test(paragraph)) {
+      errors.push('Every narrative paragraph must include at least one inline citation like [1].');
+      break;
+    }
+  }
+
+  if (options.requireKeyDevelopments) {
+    if (keyDevelopmentsLineIndex < 0) {
+      errors.push('Missing "Key developments" section.');
+    } else {
+      const afterHeader = lines.slice(keyDevelopmentsLineIndex + 1);
+      const bulletLines = afterHeader.filter((line) => /^\s*[-*]\s+/.test(line));
+
+      if (bulletLines.length < options.minKeyDevelopmentsBullets) {
+        errors.push(
+          `Key developments contains ${bulletLines.length} bullets; expected at least ${options.minKeyDevelopmentsBullets}`,
+        );
+      }
+      if (
+        typeof options.maxKeyDevelopmentsBullets === 'number' &&
+        Number.isFinite(options.maxKeyDevelopmentsBullets) &&
+        bulletLines.length > options.maxKeyDevelopmentsBullets
+      ) {
+        errors.push(
+          `Key developments contains ${bulletLines.length} bullets; expected at most ${options.maxKeyDevelopmentsBullets}`,
+        );
+      }
+
+      const bulletIssues: string[] = [];
+      for (const bulletLine of bulletLines) {
+        const bullet = bulletLine.replace(/^\s*[-*]\s+/, '').trim();
+        const hasDateStart = /^\d{4}-\d{2}-\d{2}\s*-\s+/.test(bullet);
+        const hasUrl = /\(https?:\/\/[^)]+\)/.test(bullet);
+        const hasCitation = /\[\d+]/.test(bullet);
+        if (!hasDateStart || !hasUrl || !hasCitation) {
+          bulletIssues.push(bulletLine.trim());
+          if (bulletIssues.length >= 2) break;
+        }
+      }
+      if (bulletIssues.length) {
+        errors.push(
+          'Key developments bullets must follow: YYYY-MM-DD - Source - Headline (URL) [n]. Example invalid bullets: ' +
+            bulletIssues.join(' | '),
+        );
+      }
+    }
+  }
+
+  if (!errors.length && (citationIds.length > 20 || distinctCitationIds.size > 12)) {
+    warnings.push('Article uses many citations; consider focusing on the most relevant sources.');
+  }
+
+  return { errors, warnings };
 };
 
 export const computeNoveltyScore = (previous: string | null | undefined, current: string): number => {

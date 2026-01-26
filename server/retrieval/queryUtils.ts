@@ -1,4 +1,4 @@
-const BASE_STOPWORDS = new Set([
+export const BASE_STOPWORDS = new Set([
   'the',
   'and',
   'or',
@@ -63,25 +63,54 @@ const tokenize = (value: string): string[] =>
     .split(/\s+/)
     .filter(Boolean);
 
+const dedupe = (tokens: string[], maxTokens: number): string[] => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const token of tokens) {
+    const key = token.toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(token);
+    if (out.length >= maxTokens) break;
+  }
+  return out;
+};
+
+const expandHyphenVariants = (token: string): string[] => {
+  const cleaned = token.trim();
+  if (!cleaned) return [];
+  if (!cleaned.includes('-')) return [cleaned];
+  const parts = cleaned.split('-').map((p) => p.trim()).filter(Boolean);
+  const joined = parts.join('');
+  return [cleaned, joined, ...parts].filter(Boolean);
+};
+
+export const tokenizeForRelevance = (input: string, options: { maxTokens?: number } = {}): string[] => {
+  const maxTokens = Math.max(1, Math.min(options.maxTokens ?? 24, 128));
+  const raw = tokenize(input);
+
+  const expanded = raw.flatMap(expandHyphenVariants);
+  const filtered = expanded
+    .map((t) => t.trim())
+    .filter((t) => t.length > 1 && !BASE_STOPWORDS.has(t));
+
+  const primary = dedupe(filtered, maxTokens);
+  if (primary.length) {
+    return primary;
+  }
+
+  // Fallback: if the query is mostly stopwords, keep a few tokens so the pipeline can still run.
+  const fallback = dedupe(raw.filter((t) => t.length > 1), maxTokens);
+  return fallback;
+};
+
 const cleanSegment = (segment: string, maxTokens: number): string | null => {
   const tokens = tokenize(segment);
   if (!tokens.length) {
     return null;
   }
   const filtered = tokens.filter((token) => !BASE_STOPWORDS.has(token));
-  const dedupe = (input: string[]) => {
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const token of input) {
-      if (seen.has(token)) continue;
-      seen.add(token);
-      out.push(token);
-      if (out.length >= maxTokens) break;
-    }
-    return out;
-  };
-
-  const chosen = dedupe(filtered.length ? filtered : tokens);
+  const chosen = dedupe(filtered.length ? filtered : tokens, maxTokens);
   const value = chosen.join(' ').trim();
   return value.length ? value : null;
 };

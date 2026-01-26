@@ -117,6 +117,21 @@ export interface ArticleGenerationResult {
   warnings?: string[];
 }
 
+export interface ImagePromptSlide {
+  title: string;
+  visualStrategy: string;
+  layout?: string;
+  overlayText?: string[];
+  prompt: string;
+  negativePrompt?: string;
+}
+
+export interface ImagePromptGenerationResult {
+  runId: string;
+  slides: ImagePromptSlide[];
+  prompt?: string;
+}
+
 export interface ApiConfigResponse {
   recencyHours: number;
   retrieval: {

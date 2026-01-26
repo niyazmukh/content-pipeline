@@ -7,6 +7,7 @@ import type {
   OutlinePayload,
   EvidenceItem,
   ArticleGenerationResult,
+  ImagePromptSlide,
   RetrievalMetrics,
   ApiConfigResponse,
   ApiHealthResponse,
@@ -72,7 +73,7 @@ const App: React.FC = () => {
   const [evidence, setEvidence] = useState<EvidenceItem[]>([]);
   const [runId, setRunId] = useState<string>('');
   const [articleResult, setArticleResult] = useState<ArticleGenerationResult | null>(null);
-  const [imagePrompt, setImagePrompt] = useState<string>('');
+  const [imagePrompts, setImagePrompts] = useState<ImagePromptSlide[]>([]);
   const [error, setError] = useState<string>('');
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [configLoaded, setConfigLoaded] = useState<boolean>(false);
@@ -137,7 +138,7 @@ const App: React.FC = () => {
     setEvidence([]);
     setRunId('');
     setArticleResult(null);
-    setImagePrompt('');
+    setImagePrompts([]);
     setError('');
     setRetrievalMetrics(null);
     setRunRecencyHours(null);
@@ -232,6 +233,7 @@ const App: React.FC = () => {
             topic: topic.trim(),
             outlineIndex: i,
             point: outlinePoints[i].point,
+            summary: outlinePoints[i].summary,
             recencyHours: outlineResult.recencyHours,
           },
           handleStageEvent,
@@ -259,7 +261,7 @@ const App: React.FC = () => {
         article: article.article.article,
       }, handleStageEvent);
 
-      setImagePrompt(image.prompt);
+      setImagePrompts(image.slides);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
@@ -293,7 +295,7 @@ const App: React.FC = () => {
       if (stage === 'synthesis' && articleResult) {
         return `${articleResult.article.wordCount} words`;
       }
-      if (stage === 'imagePrompt' && imagePrompt) {
+      if (stage === 'imagePrompt' && imagePrompts.length) {
         return 'Ready';
       }
       const msg = stageMessages[stage];
@@ -305,7 +307,7 @@ const App: React.FC = () => {
       status: mapStageStatus(stageStates[stage]),
       detail: detailForStage(stage),
     }));
-  }, [articleResult, clusters.length, evidence.length, imagePrompt, outline, retrievalMetrics, stageMessages, stageStates, targetedProgress]);
+  }, [articleResult, clusters.length, evidence.length, imagePrompts.length, outline, retrievalMetrics, stageMessages, stageStates, targetedProgress]);
 
   const canGenerateArticle = outline && evidence.length > 0 && clusters.length > 0;
 
@@ -702,7 +704,7 @@ const App: React.FC = () => {
         {articleResult && (
           <ArticlePanel
             article={articleResult.article}
-            imagePrompt={imagePrompt}
+            imagePrompts={imagePrompts}
             noveltyScore={articleResult.noveltyScore}
             warnings={articleResult.warnings}
           />
