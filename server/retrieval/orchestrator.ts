@@ -310,7 +310,9 @@ export const retrieveUnified = async (
 
           if (outcome.article) {
             const decision = evaluateArticle(outcome.article, filterOptions);
-            if (decision.warnings.includes('missing_published_at')) {
+            // Google CSE often lacks reliable publishedAt metadata; don't treat that as a meaningful "missing date"
+            // signal in metrics, as it can confuse users and doesn't imply extraction failure.
+            if (decision.warnings.includes('missing_published_at') && candidate.provider !== 'google') {
               if (m) m.missingPublishedAt++;
             }
 

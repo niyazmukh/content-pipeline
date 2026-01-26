@@ -44,7 +44,13 @@ export interface RankedArticle extends NormalizedArticle {
 const computeScore = (article: NormalizedArticle, options: RankingOptions): RankedArticle => {
   const now = Date.now();
   const publishedMs = article.publishedAt ? Date.parse(article.publishedAt) : NaN;
-  const hoursOld = Number.isNaN(publishedMs) ? options.recencyHours : Math.max(0, (now - publishedMs) / (60 * 60 * 1000));
+  const missingDateFallbackHours =
+    article.provenance?.provider === 'google'
+      ? Math.max(1, Math.round(options.recencyHours * 0.5))
+      : options.recencyHours;
+  const hoursOld = Number.isNaN(publishedMs)
+    ? missingDateFallbackHours
+    : Math.max(0, (now - publishedMs) / (60 * 60 * 1000));
   const recencyScore = Number((1 - Math.min(hoursOld / options.recencyHours, 1)).toFixed(3));
   const qualityScore = Number(Math.min(article.quality.wordCount / 1200, 1).toFixed(3));
   const relevanceScore = Number(article.quality.relevanceScore.toFixed(3));

@@ -133,6 +133,21 @@ export const synthesizeArticle = async ({
   const sourceCatalog = buildSourceCatalog(evidence, retrievalClusters);
   const sourcesJson = JSON.stringify(sourceCatalog, null, 2);
   const prevArticle = previousArticle || '';
+  const isoDateRe = /^\d{4}-\d{2}-\d{2}$/u;
+  const availableDates = Array.from(
+    new Set(
+      sourceCatalog
+        .map((s) => (s.publishedAt ? s.publishedAt.split('T')[0] : null))
+        .filter((d): d is string => Boolean(d && isoDateRe.test(d))),
+    ),
+  )
+    .sort()
+    .reverse();
+  const narrativeDateTarget = Math.min(3, availableDates.length);
+  const distinctSourceTarget = Math.max(1, Math.min(6, sourceCatalog.length));
+  const availableDatesText = availableDates.length
+    ? availableDates.slice(0, 12).map((d) => `- ${d}`).join('\n')
+    : 'none';
 
   let attempt = 0;
   let rawResponse = '';
@@ -241,11 +256,14 @@ export const synthesizeArticle = async ({
 
     const hydratedPrompt = prompt
       .replaceAll('{RECENCY_WINDOW}', recencyWindow)
+      .replaceAll('{DATE_TARGET}', String(narrativeDateTarget))
+      .replaceAll('{DISTINCT_SOURCE_TARGET}', String(distinctSourceTarget))
       .replace('{TOPIC}', topic)
       .replace('{OUTLINE}', outlineJson)
       .replace('{EVIDENCE}', evidenceText)
       .replace('{CLUSTERS}', clustersJson)
       .replace('{SOURCES}', sourcesJson)
+      .replace('{AVAILABLE_DATES}', availableDatesText)
       .replace('{PREVIOUS}', prevArticle);
 
     logger.info('Generating article', { runId, attempt });
@@ -284,8 +302,8 @@ export const synthesizeArticle = async ({
 
     const { errors: bodyErrors, warnings: bodyWarnings } = validateArticleBody(coerced.article, {
       minCitations: 8,
-      minDistinctCitationIds: 6,
-      minNarrativeDates: 3,
+      minDistinctCitationIds: distinctSourceTarget,
+      minNarrativeDates: narrativeDateTarget,
       requireKeyDevelopments: true,
       minKeyDevelopmentsBullets: 5,
       maxKeyDevelopmentsBullets: 7,
@@ -333,9 +351,15 @@ export const synthesizeArticle = async ({
     const keyDevIndex = keyDevLines.findIndex((line) => /^\s*key developments\b/i.test(line.trim()));
     const keyDevUrlErrors: string[] = [];
     if (keyDevIndex >= 0) {
-      const bulletLines = keyDevLines
-        .slice(keyDevIndex + 1)
-        .filter((line) => /^\s*[-*]\s+/.test(line));
+      const isKeyDevBulletLine = (line: string): boolean => {
+        const trimmed = line.trim();
+        if (!trimmed) return false;
+        if (/^\s*[-*]\s+/.test(line)) return true;
+        if (/^\d{4}-\d{2}-\d{2}\s*-\s+/.test(trimmed)) return true;
+        if (/^undated\s*-\s+/i.test(trimmed)) return true;
+        return false;
+      };
+      const bulletLines = keyDevLines.slice(keyDevIndex + 1).filter(isKeyDevBulletLine);
       const badUrls: string[] = [];
       for (const bulletLine of bulletLines) {
         const urlMatch = bulletLine.match(/\((https?:\/\/[^)]+)\)/);

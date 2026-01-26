@@ -18,21 +18,25 @@ Structure & word budgeting (targets; +/- 15 words each):
 1) Lead (80-110 words): state the thesis and frame why it matters now.
 2) Three short sections aligned to the most important outline points (each 70-100 words): include concrete named entities, dates, and factual details.
 3) Implications / what to watch (50-80 words): forward-looking but grounded; no speculation without citations.
-4) Key developments (past {RECENCY_WINDOW}) section: 5-7 bullets. Each bullet must follow exactly:
-   YYYY-MM-DD - Source - Headline (URL) [n]
+4) Key developments (past {RECENCY_WINDOW}) section: 5-7 bullets. Each bullet must be a single line that starts with "- " and follows one of these exact patterns:
+   - YYYY-MM-DD - Source - Headline (URL) [n]
+   - Undated - Source - Headline (URL) [n]
+   Notes:
+   - Use "Undated" ONLY when that source has no publishedAt date in the Source Catalog.
    - URL must be copied from the Source Catalog.
    - Reuse citation IDs that appear earlier in the article when possible.
 
 Citations & sourcing (non-negotiable):
 - Use inline numeric citations like [1] immediately after the sentence they support.
 - Use at least 8 inline citations across the narrative (not just the bullets).
-- Use at least 6 distinct sources (different URLs) overall.
+- Use at least {DISTINCT_SOURCE_TARGET} distinct sources (different URLs) overall.
 - Every paragraph must contain at least 1 citation.
 - Every Key developments bullet must include at least one [n].
 
-Dates (non-negotiable):
-- Mention at least 3 distinct YYYY-MM-DD dates in the narrative portion (not just in Key developments).
-- Dates must be taken from the provided clusters/evidence (publishedAt values). If dates are missing, do not invent them.
+Dates (grounding):
+- Narrative date target: {DATE_TARGET} distinct YYYY-MM-DD dates in the narrative portion (not just in Key developments).
+- Use ONLY dates that appear in the Cluster Catalog or Source Catalog (publishedAt). If a source is missing publishedAt, do not invent dates.
+- If DATE_TARGET is 0 (no reliable publishedAt dates in inputs), write without explicit dates; do not invent them.
 
 Optional novelty:
 - If Previous Article Synopsis is non-empty, include one brief "Novelty vs last week:" sentence. If it contains a factual claim, cite it.
@@ -61,6 +65,9 @@ Source Catalog (IDs for inline citations):
 {SOURCES}
 \`\`\`
 
+Available published dates (from Source Catalog; may be empty):
+{AVAILABLE_DATES}
+
 Previous Article Synopsis (may be empty):
 \`\`\`
 {PREVIOUS}
@@ -69,8 +76,8 @@ Previous Article Synopsis (may be empty):
 Pre-flight self-check (do this mentally; do not output it):
 - Is \`article\` 400-600 words including Key developments?
 - Does every citation [n] exist in the Source Catalog?
-- Do you have >=8 citations and >=6 distinct sources?
-- Do you mention >=3 distinct YYYY-MM-DD dates in the narrative portion?
+- Do you have >=8 citations and >={DISTINCT_SOURCE_TARGET} distinct sources?
+- Do you mention >={DATE_TARGET} distinct YYYY-MM-DD dates in the narrative portion (unless DATE_TARGET is 0)?
 - Do you have 5-7 Key developments bullets in the exact format with URL + [n]?
 
 ## Output Format

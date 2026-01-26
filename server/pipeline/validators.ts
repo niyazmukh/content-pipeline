@@ -153,7 +153,16 @@ export const validateArticleBody = (
       errors.push('Missing "Key developments" section.');
     } else {
       const afterHeader = lines.slice(keyDevelopmentsLineIndex + 1);
-      const bulletLines = afterHeader.filter((line) => /^\s*[-*]\s+/.test(line));
+      const isBulletLine = (line: string): boolean => {
+        const trimmed = line.trim();
+        if (!trimmed) return false;
+        // Accept common bullet markers, but also tolerate "raw" one-line bullets without a marker.
+        if (/^\s*[-*]\s+/.test(line)) return true;
+        if (/^\d{4}-\d{2}-\d{2}\s*-\s+/.test(trimmed)) return true;
+        if (/^undated\s*-\s+/i.test(trimmed)) return true;
+        return false;
+      };
+      const bulletLines = afterHeader.filter(isBulletLine);
 
       if (bulletLines.length < options.minKeyDevelopmentsBullets) {
         errors.push(
@@ -173,7 +182,7 @@ export const validateArticleBody = (
       const bulletIssues: string[] = [];
       for (const bulletLine of bulletLines) {
         const bullet = bulletLine.replace(/^\s*[-*]\s+/, '').trim();
-        const hasDateStart = /^\d{4}-\d{2}-\d{2}\s*-\s+/.test(bullet);
+        const hasDateStart = /^\d{4}-\d{2}-\d{2}\s*-\s+/.test(bullet) || /^undated\s*-\s+/i.test(bullet);
         const hasUrl = /\(https?:\/\/[^)]+\)/.test(bullet);
         const hasCitation = /\[\d+]/.test(bullet);
         if (!hasDateStart || !hasUrl || !hasCitation) {
@@ -183,7 +192,7 @@ export const validateArticleBody = (
       }
       if (bulletIssues.length) {
         errors.push(
-          'Key developments bullets must follow: YYYY-MM-DD - Source - Headline (URL) [n]. Example invalid bullets: ' +
+          'Key developments bullets must follow: - YYYY-MM-DD - Source - Headline (URL) [n] (or - Undated - ...). Example invalid bullets: ' +
             bulletIssues.join(' | '),
         );
       }
