@@ -47,20 +47,25 @@ export const handleRunRetrievalStream = async ({
   let currentStage = retrievalStage;
 
   try {
+    currentStage = retrievalStage;
+    retrievalStage.start({ message: `Preparing queries for "${topic}"` });
+
     let searchQuery: string | { google: string; newsapi: string; eventregistry: string[] } = topic;
     try {
       const analysisService = new TopicAnalysisService(config, logger);
+      retrievalStage.progress({ message: 'Analyzing topic with Gemini' });
       const analysis = await analysisService.analyze(topic, signal);
       searchQuery = analysis.queries;
       logger.info('Topic analysis result', { runId, analysis });
+      retrievalStage.progress({ message: 'Topic analysis complete; starting retrieval' });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.warn('Topic analysis failed; using raw topic', { runId, error: message });
       searchQuery = topic;
+      retrievalStage.progress({ message: 'Topic analysis unavailable; starting retrieval with raw topic' });
     }
 
-    currentStage = retrievalStage;
-    retrievalStage.start({ message: `Retrieving recent stories for "${topic}"` });
+    retrievalStage.progress({ message: `Retrieving recent stories for "${topic}"` });
     const retrievalResult = await retrieveUnified(runId, searchQuery, config, {
       signal,
       logger,
@@ -100,4 +105,3 @@ export const handleRunRetrievalStream = async ({
     stream.close();
   }
 };
-
