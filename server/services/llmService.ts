@@ -35,6 +35,10 @@ export class LLMService {
     let currentModel = primaryModel;
     let attempt = 0;
     const maxAttempts = 3;
+    const modelsTried: string[] = [];
+    let lastErrorMessage: string | null = null;
+    let lastErrorCode: number | null = null;
+    let lastErrorWasTransient = false;
 
     // Permissive safety settings for news analysis
     const safetySettings = [
@@ -46,6 +50,7 @@ export class LLMService {
 
     while (attempt < maxAttempts) {
       attempt++;
+      modelsTried.push(currentModel);
       try {
         const response = await rateLimitedGenerateContent(this.config, {
           model: currentModel,
@@ -68,10 +73,15 @@ export class LLMService {
         if (options.signal?.aborted) throw error;
 
         const isTransient = isTransientError(error);
+        lastErrorWasTransient = isTransient;
+        lastErrorMessage = error instanceof Error ? error.message : String(error);
+        const maybeCode = (error as any)?.status ?? (error as any)?.error?.code ?? null;
+        lastErrorCode = typeof maybeCode === 'number' && Number.isFinite(maybeCode) ? maybeCode : null;
         this.logger.warn('LLM generation error', {
           model: currentModel,
           attempt,
-          error: (error as Error).message,
+          error: lastErrorMessage,
+          errorCode: lastErrorCode,
           isTransient,
         });
 
@@ -89,12 +99,18 @@ export class LLMService {
                  continue;
             }
         }
-        
+         
         await sleep(Math.pow(2, attempt) * 1000, options.signal);
       }
     }
 
-    throw new Error(`Failed to generate content after ${maxAttempts} attempts`);
+    const modelsSummary = Array.from(new Set(modelsTried)).join(' -> ');
+    const codePart = lastErrorCode != null ? ` (code ${lastErrorCode})` : '';
+    const lastPart = lastErrorMessage ? ` Last error: ${lastErrorMessage}${codePart}.` : '';
+    const hint = lastErrorWasTransient
+      ? ' This is usually a temporary Gemini issue or a quota/rate-limit (try again, lower RPM, or use your own key).'
+      : '';
+    throw new Error(`Failed to generate content after ${maxAttempts} attempts (models: ${modelsSummary}).${lastPart}${hint}`);
   }
 
   async generateAndParse<T>(
