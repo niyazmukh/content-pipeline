@@ -41,7 +41,9 @@ export const fetchGoogleCandidates = async (
     };
   }
 
-  const maxResults = Math.min(Math.max(options.maxResults ?? 20, 1), 50);
+  // Google CSE can return many "almost relevant" results; fetching a few more pages
+  // improves the chance that our extractor finds enough high-quality, readable articles.
+  const maxResults = Math.min(Math.max(options.maxResults ?? 40, 1), 50);
   const recencyHours = options.recencyHours ?? config.recencyHours;
   const recencyCutoffMs = Date.now() - recencyHours * 60 * 60 * 1000;
   const recencyDays = Math.max(1, Math.min(31, Math.round(recencyHours / 24) || 1));

@@ -82,7 +82,8 @@ export interface ArticleValidationOptions {
   minCitations: number;
   minDistinctCitationIds: number;
   minNarrativeDates: number;
-  requireKeyDevelopments: boolean;
+  narrativeDatesPolicy: 'require' | 'warn' | 'off';
+  keyDevelopmentsPolicy: 'require' | 'warn' | 'off';
   minKeyDevelopmentsBullets: number;
   maxKeyDevelopmentsBullets?: number;
 }
@@ -126,10 +127,13 @@ export const validateArticleBody = (
   const narrativeText = keyDevelopmentsLineIndex >= 0 ? lines.slice(0, keyDevelopmentsLineIndex).join('\n') : article;
 
   const narrativeDates = new Set((narrativeText.match(/\b\d{4}-\d{2}-\d{2}\b/g) || []).map((d) => d.trim()));
-  if (narrativeDates.size < options.minNarrativeDates) {
-    errors.push(
-      `Article narrative contains ${narrativeDates.size} unique dates; expected at least ${options.minNarrativeDates}`,
-    );
+  if (options.narrativeDatesPolicy !== 'off' && narrativeDates.size < options.minNarrativeDates) {
+    const message = `Article narrative contains ${narrativeDates.size} unique dates; expected at least ${options.minNarrativeDates}`;
+    if (options.narrativeDatesPolicy === 'require') {
+      errors.push(message);
+    } else {
+      warnings.push(message);
+    }
   }
 
   // Narrative paragraph citation coverage (skip short headings)
@@ -148,9 +152,14 @@ export const validateArticleBody = (
     }
   }
 
-  if (options.requireKeyDevelopments) {
+  if (options.keyDevelopmentsPolicy !== 'off') {
     if (keyDevelopmentsLineIndex < 0) {
-      errors.push('Missing "Key developments" section.');
+      const message = 'Missing "Key developments" section.';
+      if (options.keyDevelopmentsPolicy === 'require') {
+        errors.push(message);
+      } else {
+        warnings.push(message);
+      }
     } else {
       const afterHeader = lines.slice(keyDevelopmentsLineIndex + 1);
       const isBulletLine = (line: string): boolean => {
@@ -165,18 +174,24 @@ export const validateArticleBody = (
       const bulletLines = afterHeader.filter(isBulletLine);
 
       if (bulletLines.length < options.minKeyDevelopmentsBullets) {
-        errors.push(
-          `Key developments contains ${bulletLines.length} bullets; expected at least ${options.minKeyDevelopmentsBullets}`,
-        );
+        const message = `Key developments contains ${bulletLines.length} bullets; expected at least ${options.minKeyDevelopmentsBullets}`;
+        if (options.keyDevelopmentsPolicy === 'require') {
+          errors.push(message);
+        } else {
+          warnings.push(message);
+        }
       }
       if (
         typeof options.maxKeyDevelopmentsBullets === 'number' &&
         Number.isFinite(options.maxKeyDevelopmentsBullets) &&
         bulletLines.length > options.maxKeyDevelopmentsBullets
       ) {
-        errors.push(
-          `Key developments contains ${bulletLines.length} bullets; expected at most ${options.maxKeyDevelopmentsBullets}`,
-        );
+        const message = `Key developments contains ${bulletLines.length} bullets; expected at most ${options.maxKeyDevelopmentsBullets}`;
+        if (options.keyDevelopmentsPolicy === 'require') {
+          errors.push(message);
+        } else {
+          warnings.push(message);
+        }
       }
 
       const bulletIssues: string[] = [];
@@ -191,10 +206,14 @@ export const validateArticleBody = (
         }
       }
       if (bulletIssues.length) {
-        errors.push(
+        const message =
           'Key developments bullets must follow: - YYYY-MM-DD - Source - Headline (URL) [n] (or - Undated - ...). Example invalid bullets: ' +
-            bulletIssues.join(' | '),
-        );
+          bulletIssues.join(' | ');
+        if (options.keyDevelopmentsPolicy === 'require') {
+          errors.push(message);
+        } else {
+          warnings.push(message);
+        }
       }
     }
   }
