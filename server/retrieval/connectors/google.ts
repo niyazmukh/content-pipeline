@@ -45,6 +45,14 @@ const isBlockedNewsOnlyHost = (rawUrl: string): boolean => {
   }
 };
 
+const isClearlyNonNewsHost = (host: string): boolean => {
+  const h = (host || '').toLowerCase();
+  if (!h) return true;
+  if (h.endsWith('.gov') || h.endsWith('.edu') || h.endsWith('.mil')) return true;
+  if (/\b(?:forum|forums|community|support|docs|documentation|help|academy|education)\b/.test(h)) return true;
+  return false;
+};
+
 const looksLikeNewsArticleUrl = (rawUrl: string): boolean => {
   try {
     const parsed = new URL(rawUrl);
@@ -52,8 +60,7 @@ const looksLikeNewsArticleUrl = (rawUrl: string): boolean => {
     const path = parsed.pathname.toLowerCase();
 
     // Exclude obvious non-news/non-publisher patterns.
-    if (/\b(?:forum|forums|community|support|docs|documentation|help|academy|education)\b/.test(host)) return false;
-    if (host.endsWith('.gov') || host.endsWith('.edu') || host.endsWith('.mil')) return false;
+    if (isClearlyNonNewsHost(host)) return false;
 
     // Many news publishers include dates in paths; accept those.
     const hasIsoDate = /\b20\d{2}-\d{2}-\d{2}\b/.test(rawUrl);
@@ -207,17 +214,19 @@ export const fetchGoogleCandidates = async (
         .filter((article) => {
           if (!article.url) return false;
           if (config.connectors.googleCse.newsOnly) {
+            let host = '';
+            try {
+              host = new URL(article.url).hostname.toLowerCase();
+            } catch {
+              return false;
+            }
+            if (isClearlyNonNewsHost(host)) return false;
             if (isBlockedNewsOnlyHost(article.url)) return false;
             if (config.connectors.googleCse.allowedHosts?.length) {
-              try {
-                const host = new URL(article.url).hostname.toLowerCase();
-                const allowed = config.connectors.googleCse.allowedHosts.some(
-                  (h) => host === h.toLowerCase() || host.endsWith(`.${h.toLowerCase()}`),
-                );
-                if (!allowed) return false;
-              } catch {
-                return false;
-              }
+              const allowed = config.connectors.googleCse.allowedHosts.some(
+                (h) => host === h.toLowerCase() || host.endsWith(`.${h.toLowerCase()}`),
+              );
+              if (!allowed) return false;
             }
           }
           if (config.connectors.googleCse.newsOnly && !article.publishedAt && !looksLikeNewsArticleUrl(article.url)) {
