@@ -44,6 +44,7 @@ const uniquenessKey = (url: string): string => {
 const minifyProviderData = (provider: ProviderName, value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== 'object') return null;
   const data = value as Record<string, unknown>;
+  const maxLen = 5000;
 
   if (provider === 'eventregistry') {
     const body =
@@ -51,12 +52,16 @@ const minifyProviderData = (provider: ProviderName, value: unknown): Record<stri
       (data as any).articleBody ??
       (data as any).content ??
       null;
-    return body ? { body } : null;
+    if (!body) return null;
+    const text = typeof body === 'string' ? body : JSON.stringify(body);
+    return { body: text.slice(0, maxLen) };
   }
 
   if (provider === 'newsapi') {
     const content = (data as any).content ?? (data as any).description ?? null;
-    return content ? { content } : null;
+    if (!content) return null;
+    const text = typeof content === 'string' ? content : JSON.stringify(content);
+    return { content: text.slice(0, maxLen) };
   }
 
   return null;

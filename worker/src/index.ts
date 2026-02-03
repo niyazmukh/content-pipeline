@@ -14,14 +14,16 @@ import { createLogger } from '../../server/obs/logger';
 import { createWorkerSseStream } from './sse';
 import { buildWorkerConfig, getRequestKeys, type WorkerEnv } from './config';
 
-const jsonResponse = (body: unknown, init?: ResponseInit) =>
-  new Response(JSON.stringify(body), {
+const jsonResponse = (body: unknown, init?: ResponseInit) => {
+  const headers = new Headers(init?.headers);
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  return new Response(JSON.stringify(body), {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers || {}),
-    },
+    headers,
   });
+};
 
 const withCors = (headers: Headers, origin: string) => {
   headers.set('Access-Control-Allow-Origin', origin);

@@ -99,58 +99,109 @@ const runPipelineToClusters = async ({ topic, recencyHours, onStageEvent }: RunA
 
   emitStage({ runId, stage: 'retrieval', status: 'start', message: `Preparing queries for "${topic}"`, onStageEvent });
 
-  const params = new URLSearchParams();
-  params.set('topic', topic);
-  params.set('runId', runId);
-  if (typeof recencyHours === 'number' && Number.isFinite(recencyHours)) {
-    params.set('recencyHours', String(recencyHours));
-  }
+  try {
+    const params = new URLSearchParams();
+    params.set('topic', topic);
+    params.set('runId', runId);
+    if (typeof recencyHours === 'number' && Number.isFinite(recencyHours)) {
+      params.set('recencyHours', String(recencyHours));
+    }
 
-  const candidatesRes = await fetch(`${API_BASE_URL}/retrieve-candidates?${params.toString()}`, {
-    method: 'GET',
-    headers: buildAuthHeaders(),
-  });
-  if (!candidatesRes.ok) {
-    const text = await candidatesRes.text().catch(() => '');
-    throw new Error(text || `Failed to retrieve candidates (${candidatesRes.status})`);
-  }
-  const candidatesJson = (await candidatesRes.json()) as RetrieveCandidatesResponse;
-  const mainQuery = candidatesJson.mainQuery || topic;
-  const totalUnique = Array.isArray(candidatesJson.candidates) ? candidatesJson.candidates.length : 0;
-  const totalReturned = Number.isFinite(candidatesJson.candidateCount) ? candidatesJson.candidateCount : totalUnique;
+    const candidatesRes = await fetch(`${API_BASE_URL}/retrieve-candidates?${params.toString()}`, {
+      method: 'GET',
+      headers: buildAuthHeaders(),
+    });
+    if (!candidatesRes.ok) {
+      const text = await candidatesRes.text().catch(() => '');
+      throw new Error(text || `Failed to retrieve candidates (${candidatesRes.status})`);
+    }
+    const candidatesJson = (await candidatesRes.json()) as RetrieveCandidatesResponse;
+    const mainQuery = candidatesJson.mainQuery || topic;
+    const totalUnique = Array.isArray(candidatesJson.candidates) ? candidatesJson.candidates.length : 0;
+    const totalReturned = Number.isFinite(candidatesJson.candidateCount) ? candidatesJson.candidateCount : totalUnique;
 
-  emitStage({
-    runId,
-    stage: 'retrieval',
-    status: 'progress',
-    message: `Fetched ${totalUnique} unique URLs (${totalReturned} returned); extracting all...`,
-    onStageEvent,
-  });
-
-  const perProvider = new Map<RetrievalProviderMetrics['provider'], RetrievalProviderMetrics>(
-    (candidatesJson.perProvider || []).map((p) => [p.provider, { ...p, preFiltered: 0, extractionAttempts: 0, accepted: 0, extractionErrors: [] }]),
-  );
-
-  const allErrors: Array<{ url: string; error: string; provider: RetrievalProviderMetrics['provider'] }> = [];
-  const acceptedArticles: any[] = [];
-
-  // Keep batch size low enough to stay under Workers subrequest limits (Free: 50 per request).
-  const batchSize = 12;
-  const candidates = candidatesJson.candidates || [];
-  const totalBatches = Math.max(1, Math.ceil(candidates.length / batchSize));
-
-  for (let i = 0; i < totalBatches; i += 1) {
-    const start = i * batchSize;
-    const batch = candidates.slice(start, start + batchSize);
     emitStage({
       runId,
       stage: 'retrieval',
       status: 'progress',
-      message: `Extracting ${Math.min(start + batch.length, candidates.length)}/${candidates.length} URLs (batch ${i + 1}/${totalBatches})`,
+      message: `Fetched ${totalUnique} unique URLs (${totalReturned} returned); extracting all...`,
       onStageEvent,
     });
 
-    const res = await fetch(`${API_BASE_URL}/extract-batch`, {
+    const perProvider = new Map<RetrievalProviderMetrics['provider'], RetrievalProviderMetrics>(
+      (candidatesJson.perProvider || []).map((p) => [p.provider, { ...p, preFiltered: 0, extractionAttempts: 0, accepted: 0, extractionErrors: [] }]),
+    );
+
+    const allErrors: Array<{ url: string; error: string; provider: RetrievalProviderMetrics['provider'] }> = [];
+    const acceptedArticles: any[] = [];
+
+    // Keep batch size low enough to stay under Workers subrequest limits (Free: 50 per request).
+    const batchSize = 12;
+    const candidates = candidatesJson.candidates || [];
+    const totalBatches = Math.max(1, Math.ceil(candidates.length / batchSize));
+
+    for (let i = 0; i < totalBatches; i += 1) {
+      const start = i * batchSize;
+      const batch = candidates.slice(start, start + batchSize);
+      emitStage({
+        runId,
+        stage: 'retrieval',
+        status: 'progress',
+        message: `Extracting ${Math.min(start + batch.length, candidates.length)}/${candidates.length} URLs (batch ${i + 1}/${totalBatches})`,
+        onStageEvent,
+      });
+
+      const res = await fetch(`${API_BASE_URL}/extract-batch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildAuthHeaders(),
+        },
+        body: JSON.stringify({
+          runId,
+          mainQuery,
+          recencyHours: candidatesJson.recencyHours,
+          candidates: batch,
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `Batch extraction failed (${res.status})`);
+      }
+
+      const json = (await res.json()) as ExtractBatchResponse;
+      if (Array.isArray(json.accepted)) {
+        acceptedArticles.push(...json.accepted);
+      }
+      if (Array.isArray(json.extractionErrors)) {
+        allErrors.push(...json.extractionErrors);
+      }
+      if (Array.isArray(json.perProvider)) {
+        for (const delta of json.perProvider) {
+          const prev = perProvider.get(delta.provider);
+          if (!prev) {
+            perProvider.set(delta.provider, delta);
+            continue;
+          }
+          prev.extractionAttempts += delta.extractionAttempts || 0;
+          prev.accepted += delta.accepted || 0;
+          prev.preFiltered += delta.preFiltered || 0;
+          prev.missingPublishedAt += delta.missingPublishedAt || 0;
+          prev.extractionErrors = [...(prev.extractionErrors || []), ...(delta.extractionErrors || [])];
+          if (delta.rejectionReasons) {
+            prev.rejectionReasons = prev.rejectionReasons ?? {};
+            for (const [k, v] of Object.entries(delta.rejectionReasons)) {
+              prev.rejectionReasons[k] = (prev.rejectionReasons[k] ?? 0) + (v ?? 0);
+            }
+          }
+        }
+      }
+    }
+
+    emitStage({ runId, stage: 'ranking', status: 'start', message: 'Clustering and scoring stories', onStageEvent });
+
+    const clusterRes = await fetch(`${API_BASE_URL}/cluster-articles`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -158,126 +209,81 @@ const runPipelineToClusters = async ({ topic, recencyHours, onStageEvent }: RunA
       },
       body: JSON.stringify({
         runId,
-        mainQuery,
         recencyHours: candidatesJson.recencyHours,
-        candidates: batch,
+        articles: acceptedArticles,
       }),
     });
+    if (!clusterRes.ok) {
+      const text = await clusterRes.text().catch(() => '');
+      throw new Error(text || `Clustering failed (${clusterRes.status})`);
+    }
+    const clustered = (await clusterRes.json()) as ClusterArticlesResponse;
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(text || `Batch extraction failed (${res.status})`);
-    }
+    const publishedAges = acceptedArticles
+      .map((article) => (article?.publishedAt ? computeAgeHours(String(article.publishedAt)) : null))
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    const newestArticleHours = publishedAges.length ? Math.min(...publishedAges) : null;
+    const oldestArticleHours = publishedAges.length ? Math.max(...publishedAges) : null;
 
-    const json = (await res.json()) as ExtractBatchResponse;
-    if (Array.isArray(json.accepted)) {
-      acceptedArticles.push(...json.accepted);
-    }
-    if (Array.isArray(json.extractionErrors)) {
-      allErrors.push(...json.extractionErrors);
-    }
-    if (Array.isArray(json.perProvider)) {
-      for (const delta of json.perProvider) {
-        const prev = perProvider.get(delta.provider);
-        if (!prev) {
-          perProvider.set(delta.provider, delta);
-          continue;
+    const providerSummaries = (['google', 'newsapi', 'eventregistry'] as RetrievalProviderMetrics['provider'][]).map((p) => {
+      const baseline = perProvider.get(p);
+      return (
+        baseline ?? {
+          provider: p,
+          returned: 0,
+          preFiltered: 0,
+          extractionAttempts: 0,
+          accepted: 0,
+          missingPublishedAt: 0,
+          extractionErrors: [],
         }
-        prev.extractionAttempts += delta.extractionAttempts || 0;
-        prev.accepted += delta.accepted || 0;
-        prev.preFiltered += delta.preFiltered || 0;
-        prev.missingPublishedAt += delta.missingPublishedAt || 0;
-        prev.extractionErrors = [...(prev.extractionErrors || []), ...(delta.extractionErrors || [])];
-        if (delta.rejectionReasons) {
-          prev.rejectionReasons = prev.rejectionReasons ?? {};
-          for (const [k, v] of Object.entries(delta.rejectionReasons)) {
-            prev.rejectionReasons[k] = (prev.rejectionReasons[k] ?? 0) + (v ?? 0);
-          }
-        }
-      }
-    }
-  }
+      );
+    });
 
-  emitStage({ runId, stage: 'ranking', status: 'start', message: 'Clustering and scoring stories', onStageEvent });
+    const totalAttempts = providerSummaries.reduce((sum, p) => sum + (p.extractionAttempts || 0), 0);
+    const totalAccepted = providerSummaries.reduce((sum, p) => sum + (p.accepted || 0), 0);
+    const totalRejected = providerSummaries.reduce((sum, p) => sum + (p.preFiltered || 0), 0);
+    const urlDeduped = providerSummaries.reduce((sum, p) => sum + (p.deduped || 0), 0);
 
-  const clusterRes = await fetch(`${API_BASE_URL}/cluster-articles`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...buildAuthHeaders(),
-    },
-    body: JSON.stringify({
+    const metrics: RetrievalMetrics = {
+      candidateCount: totalReturned,
+      preFiltered: urlDeduped + totalRejected,
+      attemptedExtractions: totalAttempts,
+      accepted: totalAccepted,
+      duplicatesRemoved: clustered.duplicatesRemoved ?? 0,
+      newestArticleHours: newestArticleHours == null ? null : Number(newestArticleHours.toFixed(2)),
+      oldestArticleHours: oldestArticleHours == null ? null : Number(oldestArticleHours.toFixed(2)),
+      perProvider: providerSummaries,
+      extractionErrors: allErrors.map((e) => ({ ...e, provider: e.provider as any })),
+    };
+
+    emitStage({
       runId,
+      stage: 'retrieval',
+      status: 'success',
+      message: `Accepted ${totalAccepted} articles`,
+      data: metrics,
+      onStageEvent,
+    });
+    emitStage({
+      runId,
+      stage: 'ranking',
+      status: 'success',
+      message: '',
+      onStageEvent,
+    });
+
+    return {
+      runId: candidatesJson.runId || runId,
       recencyHours: candidatesJson.recencyHours,
-      articles: acceptedArticles,
-    }),
-  });
-  if (!clusterRes.ok) {
-    const text = await clusterRes.text().catch(() => '');
-    throw new Error(text || `Clustering failed (${clusterRes.status})`);
+      clusters: clustered.clusters,
+      metrics,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    emitStage({ runId, stage: 'retrieval', status: 'failure', message, onStageEvent });
+    throw error;
   }
-  const clustered = (await clusterRes.json()) as ClusterArticlesResponse;
-
-  const publishedAges = acceptedArticles
-    .map((article) => (article?.publishedAt ? computeAgeHours(String(article.publishedAt)) : null))
-    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
-  const newestArticleHours = publishedAges.length ? Math.min(...publishedAges) : null;
-  const oldestArticleHours = publishedAges.length ? Math.max(...publishedAges) : null;
-
-  const providerSummaries = (['google', 'newsapi', 'eventregistry'] as RetrievalProviderMetrics['provider'][]).map((p) => {
-    const baseline = perProvider.get(p);
-    return (
-      baseline ?? {
-        provider: p,
-        returned: 0,
-        preFiltered: 0,
-        extractionAttempts: 0,
-        accepted: 0,
-        missingPublishedAt: 0,
-        extractionErrors: [],
-      }
-    );
-  });
-
-  const totalAttempts = providerSummaries.reduce((sum, p) => sum + (p.extractionAttempts || 0), 0);
-  const totalAccepted = providerSummaries.reduce((sum, p) => sum + (p.accepted || 0), 0);
-  const totalRejected = providerSummaries.reduce((sum, p) => sum + (p.preFiltered || 0), 0);
-  const urlDeduped = providerSummaries.reduce((sum, p) => sum + (p.deduped || 0), 0);
-
-  const metrics: RetrievalMetrics = {
-    candidateCount: totalReturned,
-    preFiltered: urlDeduped + totalRejected,
-    attemptedExtractions: totalAttempts,
-    accepted: totalAccepted,
-    duplicatesRemoved: clustered.duplicatesRemoved ?? 0,
-    newestArticleHours: newestArticleHours == null ? null : Number(newestArticleHours.toFixed(2)),
-    oldestArticleHours: oldestArticleHours == null ? null : Number(oldestArticleHours.toFixed(2)),
-    perProvider: providerSummaries,
-    extractionErrors: allErrors.map((e) => ({ ...e, provider: e.provider as any })),
-  };
-
-  emitStage({
-    runId,
-    stage: 'retrieval',
-    status: 'success',
-    message: `Accepted ${totalAccepted} articles`,
-    data: metrics,
-    onStageEvent,
-  });
-  emitStage({
-    runId,
-    stage: 'ranking',
-    status: 'success',
-    message: '',
-    onStageEvent,
-  });
-
-  return {
-    runId: candidatesJson.runId || runId,
-    recencyHours: candidatesJson.recencyHours,
-    clusters: clustered.clusters,
-    metrics,
-  };
 };
 
 const generateOutlineFromClusters = async (args: {
