@@ -25,7 +25,7 @@ export interface ExtractBatchResult {
 
 const initProviderMetrics = (): Map<ProviderName, RetrievalProviderMetrics> => {
   const map = new Map<ProviderName, RetrievalProviderMetrics>();
-  (['google', 'newsapi', 'eventregistry'] as ProviderName[]).forEach((provider) => {
+  (['google', 'googlenews', 'newsapi', 'eventregistry'] as ProviderName[]).forEach((provider) => {
     map.set(provider, {
       provider,
       returned: 0,

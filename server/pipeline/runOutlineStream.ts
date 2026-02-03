@@ -28,7 +28,7 @@ const sendStageEvent = <T>(stream: SseStream, event: StageEvent<T>) => {
   stream.send(event);
 };
 
-const PROVIDER_ORDER: ProviderName[] = ['google', 'newsapi', 'eventregistry'];
+const PROVIDER_ORDER: ProviderName[] = ['google', 'googlenews', 'newsapi', 'eventregistry'];
 
 const buildProviderBaselines = (): Map<ProviderName, ProviderRetrievalMetrics> =>
   new Map(

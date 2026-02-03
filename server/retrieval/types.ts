@@ -1,4 +1,4 @@
-export type ProviderName = 'google' | 'newsapi' | 'eventregistry';
+export type ProviderName = 'google' | 'googlenews' | 'newsapi' | 'eventregistry';
 
 import type {
   RetrievalMetrics as SharedRetrievalMetrics,

@@ -48,6 +48,20 @@ export const ConfigSchema = z.object({
        */
       allowedHosts: z.array(z.string().min(1)).default([]),
     }),
+    googleNewsRss: z.object({
+      enabled: z.boolean(),
+      /**
+       * Feed edition controls (language/country/edition). Defaults to US English.
+       * See: https://news.google.com/rss (query params: hl, gl, ceid)
+       */
+      hl: z.string().min(2).default('en-US'),
+      gl: z.string().min(2).default('US'),
+      ceid: z.string().min(3).default('US:en'),
+      /**
+       * Max RSS items to return from the feed (best-effort; the feed may return fewer).
+       */
+      maxResults: z.number().int().positive().max(100).default(40),
+    }),
     newsApi: z.object({
       apiKey: z.string().optional(),
       pageSize: z.number().int().positive(),

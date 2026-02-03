@@ -30,6 +30,9 @@ logger.info('Config loaded', {
       hasApiKey: Boolean(config.connectors.googleCse.apiKey),
       hasSearchEngineId: Boolean(config.connectors.googleCse.searchEngineId),
     },
+    googleNewsRss: {
+      enabled: config.connectors.googleNewsRss.enabled,
+    },
     newsApi: {
       enabled: config.connectors.newsApi.enabled,
       hasApiKey: Boolean(config.connectors.newsApi.apiKey),

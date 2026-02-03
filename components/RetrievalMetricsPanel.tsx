@@ -7,6 +7,7 @@ interface RetrievalMetricsPanelProps {
 
 const providerLabels: Record<RetrievalProviderMetrics['provider'], string> = {
   google: 'Google CSE',
+  googlenews: 'Google News (RSS)',
   newsapi: 'NewsAPI',
   eventregistry: 'EventRegistry',
 };
@@ -33,7 +34,7 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
     return null;
   }
 
-  const connectorOrder: RetrievalProviderMetrics['provider'][] = ['google', 'newsapi', 'eventregistry'];
+  const connectorOrder: RetrievalProviderMetrics['provider'][] = ['google', 'googlenews', 'newsapi', 'eventregistry'];
   const providedMetrics: RetrievalProviderMetrics[] = Array.isArray(metrics.perProvider)
     ? (metrics.perProvider as RetrievalProviderMetrics[])
     : [];

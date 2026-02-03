@@ -6,6 +6,11 @@ export interface WorkerEnv {
   GOOGLE_CSE_API_KEY?: string;
   GOOGLE_CSE_CX?: string;
   GOOGLE_CSE_ALLOWED_HOSTS?: string;
+  GOOGLE_NEWS_RSS_ENABLED?: string;
+  GOOGLE_NEWS_RSS_HL?: string;
+  GOOGLE_NEWS_RSS_GL?: string;
+  GOOGLE_NEWS_RSS_CEID?: string;
+  GOOGLE_NEWS_RSS_MAX_RESULTS?: string;
   NEWS_API_KEY?: string;
   EVENT_REGISTRY_API_KEY?: string;
 }
@@ -63,6 +68,13 @@ export const buildWorkerConfig = (keys: RequestKeys, env: WorkerEnv = {}): AppCo
   const resolvedGoogleKey = googleCseApiKey || env.GOOGLE_CSE_API_KEY || '';
   const resolvedGoogleCx = googleCseCx || env.GOOGLE_CSE_CX || '';
   const resolvedAllowedHosts = csv(env.GOOGLE_CSE_ALLOWED_HOSTS);
+  const resolvedGoogleNewsEnabled = (env.GOOGLE_NEWS_RSS_ENABLED || '').trim()
+    ? ['1', 'true', 'yes', 'on'].includes((env.GOOGLE_NEWS_RSS_ENABLED || '').trim().toLowerCase())
+    : true;
+  const resolvedGoogleNewsHl = (env.GOOGLE_NEWS_RSS_HL || 'en-US').trim() || 'en-US';
+  const resolvedGoogleNewsGl = (env.GOOGLE_NEWS_RSS_GL || 'US').trim() || 'US';
+  const resolvedGoogleNewsCeid = (env.GOOGLE_NEWS_RSS_CEID || 'US:en').trim() || 'US:en';
+  const resolvedGoogleNewsMax = numberOr(env.GOOGLE_NEWS_RSS_MAX_RESULTS ?? null, 40);
   const resolvedNewsKey = newsApiKey || env.NEWS_API_KEY || '';
   const resolvedEventRegistryKey = eventRegistryApiKey || env.EVENT_REGISTRY_API_KEY || '';
 
@@ -96,6 +108,13 @@ export const buildWorkerConfig = (keys: RequestKeys, env: WorkerEnv = {}): AppCo
         enabled: Boolean(resolvedGoogleKey && resolvedGoogleCx),
         newsOnly: true,
         allowedHosts: resolvedAllowedHosts,
+      },
+      googleNewsRss: {
+        enabled: resolvedGoogleNewsEnabled,
+        hl: resolvedGoogleNewsHl,
+        gl: resolvedGoogleNewsGl,
+        ceid: resolvedGoogleNewsCeid,
+        maxResults: Math.max(1, Math.min(100, Math.round(resolvedGoogleNewsMax))),
       },
       newsApi: {
         apiKey: resolvedNewsKey || undefined,

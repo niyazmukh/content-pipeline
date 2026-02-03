@@ -225,7 +225,7 @@ const runPipelineToClusters = async ({ topic, recencyHours, onStageEvent }: RunA
     const newestArticleHours = publishedAges.length ? Math.min(...publishedAges) : null;
     const oldestArticleHours = publishedAges.length ? Math.max(...publishedAges) : null;
 
-    const providerSummaries = (['google', 'newsapi', 'eventregistry'] as RetrievalProviderMetrics['provider'][]).map((p) => {
+    const providerSummaries = (['google', 'googlenews', 'newsapi', 'eventregistry'] as RetrievalProviderMetrics['provider'][]).map((p) => {
       const baseline = perProvider.get(p);
       return (
         baseline ?? {

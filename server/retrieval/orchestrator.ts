@@ -2,6 +2,7 @@ import type { AppConfig } from '../../shared/config';
 import type { Logger } from '../obs/logger';
 import { sleep } from '../utils/async';
 import { fetchGoogleCandidates } from './connectors/google';
+import { fetchGoogleNewsRssCandidates } from './connectors/googleNewsRss';
 import { fetchNewsApiCandidates } from './connectors/newsapi';
 import { fetchEventRegistryCandidates } from './connectors/eventRegistry';
 import { extractArticle } from './extraction';
@@ -139,9 +140,12 @@ export const retrieveUnified = async (
       }
     };
 
-    const [google, newsapi, eventRegistry] = await Promise.all([
+    const [google, googleNews, newsapi, eventRegistry] = await Promise.all([
       safeFetchConnector('google', () =>
         fetchGoogleCandidates(googleQuery, config, { signal: controller.signal, recencyHours }), googleQuery
+      ),
+      safeFetchConnector('googlenews', () =>
+        fetchGoogleNewsRssCandidates(googleQuery, config, { signal: controller.signal, recencyHours }), googleQuery
       ),
       safeFetchConnector('newsapi', () =>
         fetchNewsApiCandidates(newsApiQuery, config, { signal: controller.signal, recencyHours }), newsApiQuery
@@ -151,7 +155,7 @@ export const retrieveUnified = async (
       ),
     ]);
 
-    const connectorResults = [google, newsapi, eventRegistry];
+    const connectorResults = [google, googleNews, newsapi, eventRegistry];
     
     // Persist raw snapshots
     await Promise.all(
@@ -180,7 +184,7 @@ export const retrieveUnified = async (
 
     // Initialize provider metrics
     const providerMetrics = new Map<ProviderName, ProviderRetrievalMetrics>();
-    (['google', 'newsapi', 'eventregistry'] as ProviderName[]).forEach((p) => {
+    (['google', 'googlenews', 'newsapi', 'eventregistry'] as ProviderName[]).forEach((p) => {
       providerMetrics.set(p, {
         provider: p,
         returned: 0,
@@ -227,6 +231,7 @@ export const retrieveUnified = async (
     const uniqueCandidates: CandidateRecord[] = [];
     const dedupedCounts = new Map<ProviderName, number>([
       ['google', 0],
+      ['googlenews', 0],
       ['newsapi', 0],
       ['eventregistry', 0],
     ]);
@@ -247,6 +252,7 @@ export const retrieveUnified = async (
     const attemptBudget = Math.max(0, Math.floor(maxAttempts));
     const providerQueues = new Map<ProviderName, CandidateRecord[]>([
       ['google', []],
+      ['googlenews', []],
       ['newsapi', []],
       ['eventregistry', []],
     ]);
@@ -255,7 +261,7 @@ export const retrieveUnified = async (
     }
 
     // Sort each provider queue so the limited extraction budget is spent on the most likely relevant candidates.
-    for (const provider of ['google', 'newsapi', 'eventregistry'] as ProviderName[]) {
+    for (const provider of ['google', 'googlenews', 'newsapi', 'eventregistry'] as ProviderName[]) {
       const queue = providerQueues.get(provider) ?? [];
       queue.sort((a, b) => computeCandidateScore(b, queryTokens) - computeCandidateScore(a, queryTokens));
       providerQueues.set(provider, queue);
@@ -269,12 +275,13 @@ export const retrieveUnified = async (
     const candidatesToTry: CandidateRecord[] = [];
     const queuedCounts = new Map<ProviderName, number>([
       ['google', 0],
+      ['googlenews', 0],
       ['newsapi', 0],
       ['eventregistry', 0],
     ]);
     while (candidatesToTry.length < attemptBudget) {
       let progressed = false;
-      for (const provider of ['google', 'newsapi', 'eventregistry'] as ProviderName[]) {
+      for (const provider of ['google', 'googlenews', 'newsapi', 'eventregistry'] as ProviderName[]) {
         if (candidatesToTry.length >= attemptBudget) break;
         const queue = providerQueues.get(provider);
         const next = queue?.shift();
@@ -286,7 +293,7 @@ export const retrieveUnified = async (
       if (!progressed) break;
     }
 
-    for (const provider of ['google', 'newsapi', 'eventregistry'] as ProviderName[]) {
+    for (const provider of ['google', 'googlenews', 'newsapi', 'eventregistry'] as ProviderName[]) {
       const bucket = providerMetrics.get(provider);
       if (!bucket) continue;
       bucket.queued = queuedCounts.get(provider) ?? 0;
@@ -299,6 +306,7 @@ export const retrieveUnified = async (
 
     const rejectionReasons = new Map<ProviderName, Record<string, number>>([
       ['google', {}],
+      ['googlenews', {}],
       ['newsapi', {}],
       ['eventregistry', {}],
     ]);

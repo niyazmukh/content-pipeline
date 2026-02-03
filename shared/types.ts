@@ -32,7 +32,7 @@ export interface NormalizedArticle {
   };
 }
 
-export type CandidateProvider = 'google' | 'newsapi' | 'eventregistry';
+export type CandidateProvider = 'google' | 'googlenews' | 'newsapi' | 'eventregistry';
 
 export interface RetrievalCandidate {
   id: string;
@@ -86,7 +86,7 @@ export interface RetrievalMetrics {
   newestArticleHours: number | null;
   oldestArticleHours: number | null;
   perProvider: RetrievalProviderMetrics[];
-  extractionErrors: Array<{ url: string; error: string; provider: 'google' | 'newsapi' | 'eventregistry' }>;
+  extractionErrors: Array<{ url: string; error: string; provider: 'google' | 'googlenews' | 'newsapi' | 'eventregistry' }>;
 }
 
 export interface StoryCluster {
@@ -182,6 +182,7 @@ export interface ApiHealthResponse {
     newsApi: boolean;
     eventRegistry: boolean;
     googleCse: boolean;
+    googleNewsRss?: boolean;
   };
   probes?: {
     newsApi?: { ok: boolean; status?: number; totalResults?: number; error?: string };

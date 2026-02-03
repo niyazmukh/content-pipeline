@@ -3,6 +3,7 @@ import type { Logger } from '../obs/logger';
 import { randomId } from '../../shared/crypto';
 import { TopicAnalysisService } from '../services/topicAnalysisService';
 import { fetchGoogleCandidates } from '../retrieval/connectors/google';
+import { fetchGoogleNewsRssCandidates } from '../retrieval/connectors/googleNewsRss';
 import { fetchNewsApiCandidates } from '../retrieval/connectors/newsapi';
 import { fetchEventRegistryCandidates } from '../retrieval/connectors/eventRegistry';
 import type { ConnectorResult, ConnectorArticle, ProviderName } from '../retrieval/types';
@@ -69,7 +70,7 @@ const minifyProviderData = (provider: ProviderName, value: unknown): Record<stri
 
 const initProviderMetrics = (): Map<ProviderName, RetrievalProviderMetrics> => {
   const map = new Map<ProviderName, RetrievalProviderMetrics>();
-  (['google', 'newsapi', 'eventregistry'] as ProviderName[]).forEach((provider) => {
+  (['google', 'googlenews', 'newsapi', 'eventregistry'] as ProviderName[]).forEach((provider) => {
     map.set(provider, {
       provider,
       returned: 0,
@@ -145,6 +146,11 @@ export const retrieveCandidates = async ({
 
   const connectorResults = await Promise.all([
     safeFetchConnector('google', () => fetchGoogleCandidates(googleQuery, config, { signal, recencyHours }), googleQuery),
+    safeFetchConnector(
+      'googlenews',
+      () => fetchGoogleNewsRssCandidates(googleQuery, config, { signal, recencyHours }),
+      googleQuery,
+    ),
     safeFetchConnector('newsapi', () => fetchNewsApiCandidates(newsApiQuery, config, { signal, recencyHours }), newsApiQuery),
     safeFetchConnector(
       'eventregistry',
@@ -176,6 +182,7 @@ export const retrieveCandidates = async ({
   const uniqueCandidates: CandidateRecord[] = [];
   const dedupedCounts = new Map<ProviderName, number>([
     ['google', 0],
+    ['googlenews', 0],
     ['newsapi', 0],
     ['eventregistry', 0],
   ]);
@@ -191,6 +198,7 @@ export const retrieveCandidates = async ({
 
   const uniqueCounts = new Map<ProviderName, number>([
     ['google', 0],
+    ['googlenews', 0],
     ['newsapi', 0],
     ['eventregistry', 0],
   ]);
@@ -198,7 +206,7 @@ export const retrieveCandidates = async ({
     uniqueCounts.set(c.provider, (uniqueCounts.get(c.provider) ?? 0) + 1);
   }
 
-  for (const provider of ['google', 'newsapi', 'eventregistry'] as ProviderName[]) {
+  for (const provider of ['google', 'googlenews', 'newsapi', 'eventregistry'] as ProviderName[]) {
     const bucket = providerMetrics.get(provider);
     if (!bucket) continue;
     bucket.deduped = dedupedCounts.get(provider) ?? 0;

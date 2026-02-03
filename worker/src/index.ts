@@ -144,6 +144,7 @@ export default {
             newsApi: Boolean(env.NEWS_API_KEY),
             eventRegistry: Boolean(env.EVENT_REGISTRY_API_KEY),
             googleCse: Boolean(env.GOOGLE_CSE_API_KEY && env.GOOGLE_CSE_CX),
+            googleNewsRss: Boolean(config.connectors.googleNewsRss?.enabled),
           },
           ...(probe ? { probes: { newsApi: newsApiProbe } } : {}),
         },

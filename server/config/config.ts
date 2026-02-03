@@ -75,6 +75,13 @@ const buildConfig = (): AppConfig => {
         newsOnly: booleanFromEnv(process.env.GOOGLE_CSE_NEWS_ONLY, true),
         allowedHosts: csvFromEnv(process.env.GOOGLE_CSE_ALLOWED_HOSTS),
       },
+      googleNewsRss: {
+        enabled: booleanFromEnv(process.env.GOOGLE_NEWS_RSS_ENABLED, true),
+        hl: (process.env.GOOGLE_NEWS_RSS_HL || 'en-US').trim(),
+        gl: (process.env.GOOGLE_NEWS_RSS_GL || 'US').trim(),
+        ceid: (process.env.GOOGLE_NEWS_RSS_CEID || 'US:en').trim(),
+        maxResults: Math.max(1, Math.min(100, numberFromEnv(process.env.GOOGLE_NEWS_RSS_MAX_RESULTS, 40))),
+      },
       newsApi: {
         apiKey: process.env.NEWS_API_KEY || process.env.NEWSAPI_KEY || undefined,
         pageSize: numberFromEnv(process.env.NEWSAPI_PAGE_SIZE, 20),
