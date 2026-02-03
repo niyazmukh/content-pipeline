@@ -84,7 +84,7 @@ export const generateImagePrompt = async ({
   logger,
   signal,
 }: ImagePromptArgs): Promise<ImagePromptResult> => {
-  const template = await loadPrompt('image_prompt.md');
+  const template = loadPrompt('image_prompt.md');
   const hydrated = template.replace('{ARTICLE_CONTENT}', article);
 
   logger.info('Generating image prompt', { runId });

@@ -55,77 +55,6 @@ const buildEvidenceDigest = (items: EvidenceItem[]): string =>
     )
     .join('\n\n');
 
-const normalizeSourceCatalog = (
-  value: unknown,
-): SourceCatalogEntry[] | null => {
-  if (!Array.isArray(value) || value.length === 0) {
-    return null;
-  }
-
-  const entries: SourceCatalogEntry[] = [];
-  const ids = new Set<number>();
-  const urls = new Set<string>();
-
-  for (const raw of value) {
-    if (!raw || typeof raw !== 'object') {
-      return null;
-    }
-    const rec = raw as Record<string, unknown>;
-    const id = typeof rec.id === 'number' ? rec.id : NaN;
-    const url = typeof rec.url === 'string' ? rec.url.trim() : '';
-    const title = typeof rec.title === 'string' ? rec.title.trim() : '';
-    const source = typeof rec.source === 'string' ? rec.source.trim() : '';
-    const publishedAt = typeof rec.publishedAt === 'string' ? rec.publishedAt : null;
-
-    if (!Number.isFinite(id) || id <= 0) return null;
-    if (!url) return null;
-    if (ids.has(id)) return null;
-    if (urls.has(url)) return null;
-
-    ids.add(id);
-    urls.add(url);
-    entries.push({
-      id,
-      url,
-      title: title || url,
-      source: source || 'Source',
-      publishedAt,
-    });
-  }
-
-  entries.sort((a, b) => a.id - b.id);
-  return entries;
-};
-
-const buildMergedSourceCatalog = (args: {
-  provided?: SourceCatalogEntry[];
-  evidence: EvidenceItem[];
-  clusters: StoryCluster[];
-}): SourceCatalogEntry[] => {
-  const computed = buildGlobalSourceCatalog({
-    clusters: args.clusters,
-    evidence: args.evidence,
-    maxSources: 80,
-  });
-
-  const provided = args.provided && args.provided.length ? normalizeSourceCatalog(args.provided) : null;
-  if (!provided) {
-    return computed;
-  }
-
-  const byUrl = new Map<string, SourceCatalogEntry>(provided.map((e) => [e.url.trim(), e]));
-  let maxId = provided.reduce((m, e) => Math.max(m, e.id), 0);
-
-  for (const entry of computed) {
-    const url = entry.url.trim();
-    if (!url || byUrl.has(url)) continue;
-    maxId += 1;
-    byUrl.set(url, { ...entry, id: maxId });
-  }
-
-  return Array.from(byUrl.values()).sort((a, b) => a.id - b.id);
-};
-
 const buildRepairInstruction = (errors: string[]): string =>
   [
     'Previous article was invalid. Fix every issue below:',
@@ -184,25 +113,14 @@ export const synthesizeArticle = async ({
   signal,
 }: ArticleSynthesisArgs): Promise<ArticleSynthesisResult> => {
   const llmService = new LLMService(config, logger);
-  const promptTemplate = await loadPrompt('final_article.md');
+  const promptTemplate = loadPrompt('final_article.md');
   const recencyWindow = describeRecencyWindow(recencyHours);
   const outlineJson = JSON.stringify(outline, null, 2);
-  const clustersJson = JSON.stringify(
-    retrievalClusters.map((cluster) => ({
-      clusterId: cluster.clusterId,
-      title: cluster.representative.title,
-      publishedAt: cluster.representative.publishedAt,
-      source: cluster.representative.sourceName ?? cluster.representative.sourceHost,
-      summary: cluster.representative.excerpt,
-      citations: cluster.citations,
-    })),
-    null,
-    2,
-  );
-  const resolvedCatalog = buildMergedSourceCatalog({
-    provided: sourceCatalogOverride,
-    evidence,
+  const resolvedCatalog = buildGlobalSourceCatalog({
     clusters: retrievalClusters,
+    evidence,
+    maxSources: 80,
+    provided: sourceCatalogOverride,
   });
   const normalizedEvidence = applySourceCatalogToEvidence(evidence, resolvedCatalog);
   const orderedEvidence = normalizedEvidence.slice().sort((a, b) => a.outlineIndex - b.outlineIndex);
@@ -340,7 +258,6 @@ export const synthesizeArticle = async ({
       .replace('{TOPIC}', topic)
       .replace('{OUTLINE}', outlineJson)
       .replace('{EVIDENCE}', evidenceText)
-      .replace('{CLUSTERS}', clustersJson)
       .replace('{SOURCES}', sourcesJson)
       .replace('{AVAILABLE_DATES}', availableDatesText)
       .replace('{PREVIOUS}', prevArticle);

@@ -1,5 +1,5 @@
 import type { SseStream } from '../../shared/sse';
-import { getPublicConfig } from '../../shared/config';
+import { getPublicConfig, parseRecencyHoursParam } from '../../shared/config';
 import { createNoopArtifactStore } from '../../shared/artifacts';
 import { handleRunOutlineStream } from '../../server/pipeline/runOutlineStream';
 import { handleRunRetrievalStream } from '../../server/pipeline/runRetrievalStream';
@@ -13,17 +13,6 @@ import { clusterArticles } from '../../server/pipeline/clusterArticles';
 import { createLogger } from '../../server/obs/logger';
 import { createWorkerSseStream } from './sse';
 import { buildWorkerConfig, getRequestKeys, type WorkerEnv } from './config';
-
-const jsonResponse = (body: unknown, init?: ResponseInit) => {
-  const headers = new Headers(init?.headers);
-  if (!headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
-  return new Response(JSON.stringify(body), {
-    ...init,
-    headers,
-  });
-};
 
 const withCors = (headers: Headers, origin: string) => {
   headers.set('Access-Control-Allow-Origin', origin);
@@ -43,6 +32,18 @@ const withCors = (headers: Headers, origin: string) => {
   headers.set('Access-Control-Max-Age', '86400');
 };
 
+const corsJsonResponse = (body: unknown, origin: string, init?: ResponseInit) => {
+  const headers = new Headers(init?.headers);
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  withCors(headers, origin);
+  return new Response(JSON.stringify(body), {
+    ...init,
+    headers,
+  });
+};
+
 const sseHeaders = (origin: string) => {
   const headers = new Headers();
   headers.set('Content-Type', 'text/event-stream');
@@ -52,13 +53,14 @@ const sseHeaders = (origin: string) => {
   return headers;
 };
 
-const ensureGeminiKey = (config: { llm: { apiKey: string } }) => {
+const ensureGeminiKey = (config: { llm: { apiKey: string } }, origin: string) => {
   if (!config.llm.apiKey || config.llm.apiKey === 'missing') {
-    return jsonResponse(
+    return corsJsonResponse(
       {
         error:
           'Gemini API key is not configured. Add a Worker secret (GEMINI_API_KEY) or provide X-Gemini-Api-Key from the client.',
       },
+      origin,
       { status: 400 },
     );
   }
@@ -98,9 +100,6 @@ export default {
       const store = createNoopArtifactStore();
 
     if (url.pathname === '/api/healthz') {
-      const headers = new Headers();
-      withCors(headers, origin);
-
       const probe = url.searchParams.get('probe') === '1';
       let newsApiProbe: { ok: boolean; status?: number; totalResults?: number; error?: string } | undefined;
       if (probe && env.NEWS_API_KEY) {
@@ -135,7 +134,7 @@ export default {
         }
       }
 
-      return jsonResponse(
+      return corsJsonResponse(
         {
           ok: true,
           ts: new Date().toISOString(),
@@ -148,27 +147,27 @@ export default {
           },
           ...(probe ? { probes: { newsApi: newsApiProbe } } : {}),
         },
-        { headers },
+        origin,
       );
     }
 
       if (url.pathname === '/api/config') {
-        const headers = new Headers();
-        withCors(headers, origin);
-        return jsonResponse(getPublicConfig(config), { headers });
+        return corsJsonResponse(getPublicConfig(config), origin);
       }
 
     if (url.pathname === '/api/run-agent-stream' && request.method === 'GET') {
-      const missing = ensureGeminiKey(config);
+      const missing = ensureGeminiKey(config, origin);
       if (missing) return missing;
 
       const topic = String(url.searchParams.get('topic') || url.searchParams.get('topicQuery') || '').trim();
       if (!topic) {
-        return jsonResponse({ error: 'Missing topic query' }, { status: 400 });
+        return corsJsonResponse({ error: 'Missing topic query' }, origin, { status: 400 });
       }
 
-        const recencyHoursRaw = url.searchParams.get('recencyHours');
-        const recencyHoursOverride = recencyHoursRaw ? Number(recencyHoursRaw) : undefined;
+        const recencyHoursOverride = parseRecencyHoursParam(
+          url.searchParams.get('recencyHours'),
+          config.recencyHours,
+        );
 
       const { stream, sse } = createWorkerSseStream({
         heartbeatMs: config.server.heartbeatIntervalMs,
@@ -178,7 +177,7 @@ export default {
 
       handleRunOutlineStream({
         topic,
-        recencyHoursOverride: Number.isFinite(recencyHoursOverride) ? recencyHoursOverride : undefined,
+        recencyHoursOverride,
         config,
         stream: sse,
         store,
@@ -198,16 +197,18 @@ export default {
     }
 
     if (url.pathname === '/api/retrieve-stream' && request.method === 'GET') {
-      const missing = ensureGeminiKey(config);
+      const missing = ensureGeminiKey(config, origin);
       if (missing) return missing;
 
       const topic = String(url.searchParams.get('topic') || url.searchParams.get('topicQuery') || '').trim();
       if (!topic) {
-        return jsonResponse({ error: 'Missing topic query' }, { status: 400 });
+        return corsJsonResponse({ error: 'Missing topic query' }, origin, { status: 400 });
       }
 
-      const recencyHoursRaw = url.searchParams.get('recencyHours');
-      const recencyHoursOverride = recencyHoursRaw ? Number(recencyHoursRaw) : undefined;
+      const recencyHoursOverride = parseRecencyHoursParam(
+        url.searchParams.get('recencyHours'),
+        config.recencyHours,
+      );
 
       const { stream, sse } = createWorkerSseStream({
         heartbeatMs: config.server.heartbeatIntervalMs,
@@ -217,7 +218,7 @@ export default {
 
       handleRunRetrievalStream({
         topic,
-        recencyHoursOverride: Number.isFinite(recencyHoursOverride) ? recencyHoursOverride : undefined,
+        recencyHoursOverride,
         config,
         stream: sse,
         store,
@@ -231,7 +232,7 @@ export default {
     }
 
     if (url.pathname === '/api/generate-outline-stream' && request.method === 'POST') {
-      const missing = ensureGeminiKey(config);
+      const missing = ensureGeminiKey(config, origin);
       if (missing) return missing;
 
       const body = await request.json().catch(() => null);
@@ -256,7 +257,7 @@ export default {
     }
 
     if (url.pathname === '/api/targeted-research-stream' && request.method === 'POST') {
-      const missing = ensureGeminiKey(config);
+      const missing = ensureGeminiKey(config, origin);
       if (missing) return missing;
 
       const body = await request.json().catch(() => null);
@@ -281,18 +282,18 @@ export default {
     }
 
     if (url.pathname === '/api/retrieve-candidates' && request.method === 'GET') {
-      const missing = ensureGeminiKey(config);
+      const missing = ensureGeminiKey(config, origin);
       if (missing) return missing;
 
       const topic = String(url.searchParams.get('topic') || url.searchParams.get('topicQuery') || '').trim();
       if (!topic) {
-        const headers = new Headers();
-        withCors(headers, origin);
-        return jsonResponse({ error: 'Missing topic query' }, { status: 400, headers });
+        return corsJsonResponse({ error: 'Missing topic query' }, origin, { status: 400 });
       }
 
-      const recencyHoursRaw = url.searchParams.get('recencyHours');
-      const recencyHoursOverride = recencyHoursRaw ? Number(recencyHoursRaw) : undefined;
+      const recencyHoursOverride = parseRecencyHoursParam(
+        url.searchParams.get('recencyHours'),
+        config.recencyHours,
+      );
       const runId = String(url.searchParams.get('runId') || '').trim();
 
       const logger = createLogger(config);
@@ -300,19 +301,15 @@ export default {
         const result = await retrieveCandidates({
           runId: runId || undefined,
           topic,
-          recencyHoursOverride: Number.isFinite(recencyHoursOverride) ? recencyHoursOverride : undefined,
+          recencyHoursOverride,
           config,
           logger,
           signal: request.signal,
         });
-        const headers = new Headers();
-        withCors(headers, origin);
-        return jsonResponse(result, { headers });
+        return corsJsonResponse(result, origin);
       } catch (error) {
-        const headers = new Headers();
-        withCors(headers, origin);
         const message = error instanceof Error ? error.message : String(error);
-        return jsonResponse({ error: message }, { status: 500, headers });
+        return corsJsonResponse({ error: message }, origin, { status: 500 });
       }
     }
 
@@ -326,9 +323,7 @@ export default {
       const recencyHours = typeof (body as any)?.recencyHours === 'number' ? Number((body as any).recencyHours) : config.recencyHours;
 
       if (!runId || !mainQuery || !Array.isArray(candidates)) {
-        const headers = new Headers();
-        withCors(headers, origin);
-        return jsonResponse({ error: 'Invalid payload' }, { status: 400, headers });
+        return corsJsonResponse({ error: 'Invalid payload' }, origin, { status: 400 });
       }
 
       try {
@@ -341,14 +336,10 @@ export default {
           logger,
           signal: request.signal,
         });
-        const headers = new Headers();
-        withCors(headers, origin);
-        return jsonResponse(result, { headers });
+        return corsJsonResponse(result, origin);
       } catch (error) {
-        const headers = new Headers();
-        withCors(headers, origin);
         const message = error instanceof Error ? error.message : String(error);
-        return jsonResponse({ error: message }, { status: 500, headers });
+        return corsJsonResponse({ error: message }, origin, { status: 500 });
       }
     }
 
@@ -361,9 +352,7 @@ export default {
       const recencyHours = typeof (body as any)?.recencyHours === 'number' ? Number((body as any).recencyHours) : config.recencyHours;
 
       if (!runId || !Array.isArray(articles)) {
-        const headers = new Headers();
-        withCors(headers, origin);
-        return jsonResponse({ error: 'Invalid payload' }, { status: 400, headers });
+        return corsJsonResponse({ error: 'Invalid payload' }, origin, { status: 400 });
       }
 
       try {
@@ -374,19 +363,15 @@ export default {
           config,
           logger,
         });
-        const headers = new Headers();
-        withCors(headers, origin);
-        return jsonResponse(result, { headers });
+        return corsJsonResponse(result, origin);
       } catch (error) {
-        const headers = new Headers();
-        withCors(headers, origin);
         const message = error instanceof Error ? error.message : String(error);
-        return jsonResponse({ error: message }, { status: 500, headers });
+        return corsJsonResponse({ error: message }, origin, { status: 500 });
       }
     }
 
       if (url.pathname === '/api/generate-article-stream' && request.method === 'POST') {
-        const missing = ensureGeminiKey(config);
+        const missing = ensureGeminiKey(config, origin);
         if (missing) return missing;
 
         const body = await request.json().catch(() => null);
@@ -411,7 +396,7 @@ export default {
       }
 
       if (url.pathname === '/api/generate-image-prompt-stream' && request.method === 'POST') {
-        const missing = ensureGeminiKey(config);
+        const missing = ensureGeminiKey(config, origin);
         if (missing) return missing;
 
         const body = await request.json().catch(() => null);
@@ -435,12 +420,10 @@ export default {
         return new Response(stream, { headers: sseHeaders(origin) });
       }
 
-      return jsonResponse({ error: 'Not found' }, { status: 404 });
+      return corsJsonResponse({ error: 'Not found' }, origin, { status: 404 });
     } catch (error) {
-      const headers = new Headers();
-      withCors(headers, origin);
       const message = error instanceof Error ? error.message : String(error);
-      return jsonResponse({ error: message }, { status: 500, headers });
+      return corsJsonResponse({ error: message }, origin, { status: 500 });
     }
   },
 };

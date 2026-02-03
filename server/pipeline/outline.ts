@@ -66,7 +66,7 @@ const mapAliasesAndDates = (
   requiredDistinctClusters: number,
 ): OutlinePayload => {
   const { aliasToId, idToDate, validIds } = buildAliasMaps(clusters);
-  const copy: OutlinePayload = JSON.parse(JSON.stringify(parsed));
+  const copy: OutlinePayload = structuredClone(parsed);
   const globalDateSet = new Set<string>();
 
   // Map supports aliases -> clusterIds; normalize dates to YYYY-MM-DD
@@ -178,7 +178,7 @@ const trimOrPadOutlinePoints = (
   clusters: StoryCluster[],
   requiredPoints: number,
 ): OutlinePayload => {
-  const copy: OutlinePayload = JSON.parse(JSON.stringify(outline));
+  const copy: OutlinePayload = structuredClone(outline);
   const points = Array.isArray(copy.outline) ? copy.outline.slice() : [];
 
   if (points.length > requiredPoints) {
@@ -238,7 +238,7 @@ export const generateOutlineFromClusters = async ({
   }
 
   const llmService = new LLMService(config, logger);
-  const promptTemplate = await loadPrompt('outline_from_clusters.md');
+  const promptTemplate = loadPrompt('outline_from_clusters.md');
   const distinctClusterCount = clusters.length;
   const requiredPoints = Math.max(1, distinctClusterCount >= 5 ? 5 : distinctClusterCount);
   const requiredClusterCoverage = Math.max(1, Math.min(4, distinctClusterCount));

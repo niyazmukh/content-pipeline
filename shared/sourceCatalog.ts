@@ -86,10 +86,51 @@ const compareDescPublishedAt = (a: SourceCatalogEntry, b: SourceCatalogEntry): n
   return aKey.localeCompare(bKey);
 };
 
+const normalizeProvidedCatalog = (value: unknown): SourceCatalogEntry[] | null => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null;
+  }
+
+  const entries: SourceCatalogEntry[] = [];
+  const ids = new Set<number>();
+  const urls = new Set<string>();
+
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') {
+      return null;
+    }
+    const rec = raw as Record<string, unknown>;
+    const id = typeof rec.id === 'number' ? rec.id : NaN;
+    const url = typeof rec.url === 'string' ? rec.url.trim() : '';
+    const title = typeof rec.title === 'string' ? rec.title.trim() : '';
+    const source = typeof rec.source === 'string' ? rec.source.trim() : '';
+    const publishedAt = typeof rec.publishedAt === 'string' ? rec.publishedAt : null;
+
+    if (!Number.isFinite(id) || id <= 0) return null;
+    if (!url) return null;
+    if (ids.has(id)) return null;
+    if (urls.has(url)) return null;
+
+    ids.add(id);
+    urls.add(url);
+    entries.push({
+      id,
+      url,
+      title: title || url,
+      source: source || 'Source',
+      publishedAt,
+    });
+  }
+
+  entries.sort((a, b) => a.id - b.id);
+  return entries;
+};
+
 export const buildGlobalSourceCatalog = (args: {
   clusters: StoryCluster[];
   evidence: EvidenceItem[];
   maxSources?: number;
+  provided?: SourceCatalogEntry[];
 }): SourceCatalogEntry[] => {
   const byUrl = new Map<string, SourceCatalogEntry>();
 
@@ -143,12 +184,32 @@ export const buildGlobalSourceCatalog = (args: {
 
   const entries = Array.from(byUrl.values()).sort(compareDescPublishedAt);
 
-  const max = typeof args.maxSources === 'number' && Number.isFinite(args.maxSources)
-    ? Math.max(1, Math.floor(args.maxSources))
-    : null;
+  const max =
+    typeof args.maxSources === 'number' && Number.isFinite(args.maxSources) ? Math.max(1, Math.floor(args.maxSources)) : null;
   const limited = max ? entries.slice(0, max) : entries;
 
-  return limited.map((entry, idx) => ({ ...entry, id: idx + 1 }));
+  const provided = normalizeProvidedCatalog(args.provided);
+  if (!provided) {
+    return limited.map((entry, idx) => ({ ...entry, id: idx + 1 }));
+  }
+
+  const mergedByUrl = new Map<string, SourceCatalogEntry>(provided.map((entry) => [normalizeUrl(entry.url), entry]));
+  let maxId = provided.reduce((m, e) => Math.max(m, e.id), 0);
+
+  for (const entry of limited) {
+    const url = normalizeUrl(entry.url);
+    if (!url) continue;
+    const existing = mergedByUrl.get(url) ?? null;
+    const merged = mergeSourceLike(existing, entry, { url });
+    if (existing) {
+      mergedByUrl.set(url, merged);
+      continue;
+    }
+    maxId += 1;
+    mergedByUrl.set(url, { ...merged, id: maxId });
+  }
+
+  return Array.from(mergedByUrl.values()).sort((a, b) => a.id - b.id);
 };
 
 export const applySourceCatalogToEvidence = (

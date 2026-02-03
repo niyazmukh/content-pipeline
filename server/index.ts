@@ -4,6 +4,7 @@ import express from 'express';
 import type { Request, Response } from 'express';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { parseRecencyHoursParam } from '../shared/config';
 import { loadConfig, getPublicConfig } from './config/config';
 import { createSseStream } from './http/sse';
 import { handleRunOutlineStream } from './pipeline/runOutlineStream';
@@ -132,18 +133,6 @@ const applyRequestConfigOverrides = (base: typeof config, req: Request): typeof 
   return next;
 };
 
-const parseRecencyHours = (value: unknown, fallback: number): number | undefined => {
-  if (value == null) {
-    return undefined;
-  }
-  const n = Number(value);
-  if (!Number.isFinite(n)) {
-    return undefined;
-  }
-  const clamped = Math.max(6, Math.min(720, Math.round(n)));
-  return clamped === fallback ? undefined : clamped;
-};
-
 app.get('/api/healthz', (_req: Request, res: Response) => {
   res.json({ ok: true, ts: new Date().toISOString() });
 });
@@ -165,7 +154,10 @@ app.get('/api/run-agent-stream', async (req: Request, res: Response) => {
     return;
   }
 
-  const recencyHoursOverride = parseRecencyHours(req.query.recencyHours, config.recencyHours);
+  const recencyHoursOverride = parseRecencyHoursParam(
+    typeof req.query.recencyHours === 'string' ? req.query.recencyHours : null,
+    config.recencyHours,
+  );
   const requestConfig = applyRequestConfigOverrides(config, req);
 
   await handleRunOutlineStream({
@@ -191,7 +183,10 @@ app.get('/api/retrieve-stream', async (req: Request, res: Response) => {
     return;
   }
 
-  const recencyHoursOverride = parseRecencyHours(req.query.recencyHours, config.recencyHours);
+  const recencyHoursOverride = parseRecencyHoursParam(
+    typeof req.query.recencyHours === 'string' ? req.query.recencyHours : null,
+    config.recencyHours,
+  );
   const requestConfig = applyRequestConfigOverrides(config, req);
 
   await handleRunRetrievalStream({
@@ -212,7 +207,10 @@ app.get('/api/retrieve-candidates', async (req: Request, res: Response) => {
   }
 
   const runId = String(req.query.runId ?? '').trim();
-  const recencyHoursOverride = parseRecencyHours(req.query.recencyHours, config.recencyHours);
+  const recencyHoursOverride = parseRecencyHoursParam(
+    typeof req.query.recencyHours === 'string' ? req.query.recencyHours : null,
+    config.recencyHours,
+  );
   const requestConfig = applyRequestConfigOverrides(config, req);
   const requestLogger = createLogger(requestConfig);
 

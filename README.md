@@ -9,7 +9,8 @@ This repo contains:
 - UI: `npm run dev`
 - Server: `npm run server`
 
-By default the UI calls `http://localhost:3001/api`.
+By default the UI calls same-origin `/api`.
+For local dev with a separate Express server, set `VITE_API_BASE=http://localhost:3001/api`.
 
 ## GitHub Pages (UI only)
 
@@ -21,7 +22,8 @@ GitHub Pages cannot run the Express server. You have two options:
 
 ### Configure the API base URL
 
-Set a GitHub Actions repository variable:
+If `VITE_API_BASE` is unset, the UI calls same-origin `/api` (works when UI and API are hosted together).
+For GitHub Pages or a separate API host, set a GitHub Actions repository variable:
 - `VITE_API_BASE` = `https://<your-server-host>/api`
 
 The workflow also sets:

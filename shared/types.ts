@@ -23,16 +23,27 @@ export interface NormalizedArticle {
   canonicalUrl: string;
   sourceHost: string;
   sourceName?: string | null;
+  sourceLabel?: string | null;
   publishedAt?: string | null;
+  modifiedAt?: string | null;
   excerpt: string;
+  body?: string | null;
+  hasExtractedBody?: boolean;
   quality: {
     wordCount: number;
     uniqueWordCount: number;
     relevanceScore: number;
   };
+  provenance?: ArticleProvenance;
 }
 
 export type CandidateProvider = 'google' | 'googlenews' | 'newsapi' | 'eventregistry';
+
+export interface ArticleProvenance {
+  provider: CandidateProvider;
+  providerId?: string | null;
+  rawRef?: string | null;
+}
 
 export interface RetrievalCandidate {
   id: string;

@@ -1,10 +1,13 @@
-export type ProviderName = 'google' | 'googlenews' | 'newsapi' | 'eventregistry';
-
 import type {
+  ArticleProvenance,
+  CandidateProvider,
+  NormalizedArticle as SharedNormalizedArticle,
   RetrievalMetrics as SharedRetrievalMetrics,
   RetrievalProviderMetrics as SharedRetrievalProviderMetrics,
   StoryCluster as SharedStoryCluster,
 } from '../../shared/types';
+
+export type ProviderName = CandidateProvider;
 
 export interface ConnectorArticle {
   id: string;
@@ -24,29 +27,10 @@ export interface ConnectorResult {
   metrics?: Record<string, unknown>;
 }
 
-export interface NormalizedArticle {
-  id: string;
-  title: string;
-  canonicalUrl: string;
-  sourceHost: string;
-  sourceName?: string | null;
-  sourceLabel?: string | null;
-  publishedAt?: string | null;
-  modifiedAt?: string | null;
-  excerpt: string;
-  body?: string | null;
+export type NormalizedArticle = SharedNormalizedArticle & {
   hasExtractedBody: boolean;
-  quality: {
-    wordCount: number;
-    uniqueWordCount: number;
-    relevanceScore: number;
-  };
-  provenance: {
-    provider: ProviderName;
-    providerId?: string | null;
-    rawRef?: string | null;
-  };
-}
+  provenance: ArticleProvenance;
+};
 
 export type ProviderRetrievalMetrics = SharedRetrievalProviderMetrics;
 export type RetrievalMetrics = SharedRetrievalMetrics;

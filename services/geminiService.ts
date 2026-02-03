@@ -15,7 +15,7 @@ import type {
 import { streamSseRequest } from './sseClient';
 import { buildAuthHeaders } from './apiKeys';
 
-export const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE || 'https://niyazm.niyazm.workers.dev/api';
+export const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE || '/api';
 
 const isStageEvent = (value: unknown): value is StageEvent => {
   return Boolean(

@@ -110,6 +110,18 @@ export interface PublicConfig {
   };
 }
 
+export const parseRecencyHoursParam = (value: string | null, fallback: number): number | undefined => {
+  if (value == null) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  const clamped = Math.max(6, Math.min(720, Math.round(parsed)));
+  return clamped === fallback ? undefined : clamped;
+};
+
 export const getPublicConfig = (config: AppConfig): PublicConfig => ({
   recencyHours: config.recencyHours,
   retrieval: {

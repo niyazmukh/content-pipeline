@@ -53,7 +53,7 @@ export class TopicAnalysisService {
       }
     }
 
-    const template = await loadPrompt('topic_analysis.md');
+    const template = loadPrompt('topic_analysis.md');
     const prompt = template
       .replace('{INPUT_TEXT}', contextText)
       .replace('{CURRENT_DATE}', new Date().toISOString().split('T')[0]);
