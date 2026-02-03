@@ -387,6 +387,20 @@ export const synthesizeArticle = async ({
     const citationCatalogErrors =
       missingCatalogIds.length > 0 ? [`Article references citation IDs not in Source Catalog: ${missingCatalogIds.join(', ')}`] : [];
 
+    // Ensure the returned sources list fully covers cited IDs, including citations we inject in Key developments.
+    // The model can drift and omit some cited IDs; we treat Source Catalog as the source of truth.
+    if (usedCitationIds.size > 0) {
+      const normalizedSources = Array.from(usedCitationIds)
+        .sort((a, b) => a - b)
+        .map((id) => sourceCatalog.find((s) => s.id === id))
+        .filter((s): s is SourceRecord => Boolean(s))
+        .map((s) => ({ id: s.id, title: s.title, url: s.url }));
+
+      if (normalizedSources.length) {
+        coerced.sources = normalizedSources;
+      }
+    }
+
     const missingFromSourcesList = Array.from(usedCitationIds).filter(
       (id) => !coerced.sources.some((s) => s.id === id),
     );
