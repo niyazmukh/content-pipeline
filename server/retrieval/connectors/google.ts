@@ -40,6 +40,47 @@ const isBlockedNewsOnlyHost = (rawUrl: string): boolean => {
   }
 };
 
+const looksLikeNewsArticleUrl = (rawUrl: string): boolean => {
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname.toLowerCase();
+
+    // Exclude obvious non-news/non-publisher patterns.
+    if (/\b(?:forum|forums|community|support|docs|documentation|help|academy|education)\b/.test(host)) return false;
+    if (host.endsWith('.gov') || host.endsWith('.edu') || host.endsWith('.mil')) return false;
+
+    // Many news publishers include dates in paths; accept those.
+    const hasIsoDate = /\b20\d{2}-\d{2}-\d{2}\b/.test(rawUrl);
+    const hasSlashDate = /\/20\d{2}\/(?:0?\d|1[0-2])\/(?:0?\d|[12]\d|3[01])\//.test(path);
+    if (hasIsoDate || hasSlashDate) return true;
+
+    // Section heuristics: accept common news sections.
+    const sectionSignals = [
+      '/news',
+      '/business',
+      '/technology',
+      '/tech',
+      '/markets',
+      '/finance',
+      '/economy',
+      '/world',
+      '/politics',
+      '/retail',
+      '/ecommerce',
+      '/supply-chain',
+      '/logistics',
+      '/press',
+      '/press-release',
+    ];
+    if (sectionSignals.some((seg) => path.includes(seg))) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
+};
+
 export const fetchGoogleCandidates = async (
   query: string,
   config: AppConfig,
@@ -161,6 +202,9 @@ export const fetchGoogleCandidates = async (
         .filter((article) => {
           if (!article.url) return false;
           if (config.connectors.googleCse.newsOnly && isBlockedNewsOnlyHost(article.url)) {
+            return false;
+          }
+          if (config.connectors.googleCse.newsOnly && !article.publishedAt && !looksLikeNewsArticleUrl(article.url)) {
             return false;
           }
           // Keep only recency-conformant items when date known; otherwise keep
