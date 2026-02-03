@@ -23,6 +23,14 @@ const booleanFromEnv = (value: string | undefined, fallback: boolean): boolean =
   return fallback;
 };
 
+const csvFromEnv = (value: string | undefined): string[] => {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+};
+
 export type { AppConfig, PublicConfig };
 
 let cachedConfig: AppConfig | null = null;
@@ -65,6 +73,7 @@ const buildConfig = (): AppConfig => {
         searchEngineId: process.env.GOOGLE_CSE_SEARCH_ENGINE_ID || process.env.GOOGLE_CSE_CX || undefined,
         enabled: booleanFromEnv(process.env.GOOGLE_CSE_ENABLED, true),
         newsOnly: booleanFromEnv(process.env.GOOGLE_CSE_NEWS_ONLY, true),
+        allowedHosts: csvFromEnv(process.env.GOOGLE_CSE_ALLOWED_HOSTS),
       },
       newsApi: {
         apiKey: process.env.NEWS_API_KEY || process.env.NEWSAPI_KEY || undefined,

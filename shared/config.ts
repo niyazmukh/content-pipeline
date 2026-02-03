@@ -42,6 +42,11 @@ export const ConfigSchema = z.object({
        * to keep the pipeline focused on news-style articles.
        */
       newsOnly: z.boolean().default(true),
+      /**
+       * Optional allowlist: when set and newsOnly=true, only these hosts (and their subdomains) are kept.
+       * Example: ["reuters.com","techcrunch.com"].
+       */
+      allowedHosts: z.array(z.string().min(1)).default([]),
     }),
     newsApi: z.object({
       apiKey: z.string().optional(),

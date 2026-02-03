@@ -29,6 +29,11 @@ const NEWS_ONLY_BLOCKED_HOSTS = [
   'medium.com',
   'quora.com',
   'pinterest.com',
+  'github.com',
+  'gitlab.com',
+  'huggingface.co',
+  'wikipedia.org',
+  'britannica.com',
 ] as const;
 
 const isBlockedNewsOnlyHost = (rawUrl: string): boolean => {
@@ -201,8 +206,19 @@ export const fetchGoogleCandidates = async (
         })
         .filter((article) => {
           if (!article.url) return false;
-          if (config.connectors.googleCse.newsOnly && isBlockedNewsOnlyHost(article.url)) {
-            return false;
+          if (config.connectors.googleCse.newsOnly) {
+            if (isBlockedNewsOnlyHost(article.url)) return false;
+            if (config.connectors.googleCse.allowedHosts?.length) {
+              try {
+                const host = new URL(article.url).hostname.toLowerCase();
+                const allowed = config.connectors.googleCse.allowedHosts.some(
+                  (h) => host === h.toLowerCase() || host.endsWith(`.${h.toLowerCase()}`),
+                );
+                if (!allowed) return false;
+              } catch {
+                return false;
+              }
+            }
           }
           if (config.connectors.googleCse.newsOnly && !article.publishedAt && !looksLikeNewsArticleUrl(article.url)) {
             return false;

@@ -5,6 +5,7 @@ export interface WorkerEnv {
   GEMINI_REQUESTS_PER_MINUTE?: string;
   GOOGLE_CSE_API_KEY?: string;
   GOOGLE_CSE_CX?: string;
+  GOOGLE_CSE_ALLOWED_HOSTS?: string;
   NEWS_API_KEY?: string;
   EVENT_REGISTRY_API_KEY?: string;
 }
@@ -16,6 +17,12 @@ const numberOr = (value: string | null, fallback: number): number => {
 };
 
 const headerValue = (headers: Headers, name: string): string => headers.get(name) || '';
+
+const csv = (value: string | undefined): string[] =>
+  (value || '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
 
 export interface RequestKeys {
   geminiApiKey: string;
@@ -55,6 +62,7 @@ export const buildWorkerConfig = (keys: RequestKeys, env: WorkerEnv = {}): AppCo
   const resolvedGeminiKey = geminiApiKey || env.GEMINI_API_KEY || '';
   const resolvedGoogleKey = googleCseApiKey || env.GOOGLE_CSE_API_KEY || '';
   const resolvedGoogleCx = googleCseCx || env.GOOGLE_CSE_CX || '';
+  const resolvedAllowedHosts = csv(env.GOOGLE_CSE_ALLOWED_HOSTS);
   const resolvedNewsKey = newsApiKey || env.NEWS_API_KEY || '';
   const resolvedEventRegistryKey = eventRegistryApiKey || env.EVENT_REGISTRY_API_KEY || '';
 
@@ -87,6 +95,7 @@ export const buildWorkerConfig = (keys: RequestKeys, env: WorkerEnv = {}): AppCo
         searchEngineId: resolvedGoogleCx || undefined,
         enabled: Boolean(resolvedGoogleKey && resolvedGoogleCx),
         newsOnly: true,
+        allowedHosts: resolvedAllowedHosts,
       },
       newsApi: {
         apiKey: resolvedNewsKey || undefined,
