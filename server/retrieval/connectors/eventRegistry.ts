@@ -2,7 +2,6 @@ import type { AppConfig } from '../../../shared/config';
 import { hashString, randomId } from '../../../shared/crypto';
 import type { ConnectorResult, ConnectorArticle } from '../types';
 import { applyPreFilter } from '../preFilter';
-import { buildLooseQueryString } from '../queryUtils';
 
 const EVENT_REGISTRY_ENDPOINT = 'https://eventregistry.org/api/v1/article/getArticles';
 
@@ -107,12 +106,11 @@ const robustNormalizeKeywords = (rawQuery: string): string[] => {
 const buildKeywordsWithinBudget = (rawQuery: string, tokenBudget = 15): string[] => {
   // If the input is already a clean phrase (from an array input), preserve it as much as possible
   // without aggressive normalization that strips quotes or stopwords.
-  const isQuoted = rawQuery.startsWith('"') && rawQuery.endsWith('"');
   const clean = rawQuery.trim();
-  
+
   // Simple token count
   const tokens = clean.replace(/['"]/g, '').split(/\s+/).filter(Boolean);
-  
+
   if (tokens.length <= tokenBudget) {
     return [clean];
   }
@@ -193,13 +191,13 @@ const isDegenerateKeyword = (value: string): boolean => {
   return false;
 };
 
-const buildRequestPayload = (
+const buildRequestParams = (
   query: string | string[],
   config: AppConfig,
   maxArticles: number,
   keywordBudget: number = 15,
   recencyHoursOverride?: number,
-): Record<string, unknown> => {
+): { params: URLSearchParams; keywordsUsed: number } => {
   const endDate = new Date();
   const recencyHours =
     typeof recencyHoursOverride === 'number' && recencyHoursOverride > 0
@@ -243,40 +241,37 @@ const buildRequestPayload = (
 
   keywordPayload = keywordPayload.map((k) => String(k || '').trim()).filter((k) => !isDegenerateKeyword(k));
 
-  const payload: Record<string, unknown> = {
-    apiKey: config.connectors.eventRegistry.apiKey,
-    action: 'getArticles',
-    resultType: 'articles',
-    keyword: keywordPayload,
-    keywordLoc: 'body,title',
-    lang: ['eng'],
-    dataType: ['news'],
-    dateStart,
-    dateEnd,
-    articlesPage: 1,
-    articlesCount: maxArticles,
-    articlesSortBy: 'date',
-    articlesSortByAsc: false,
-    articleBodyLen: -1,
-    articlesArticleBodyLen: -1,
-    includeArticleTitle: true,
-    includeArticleBasicInfo: true,
-    includeArticleBody: true,
-    includeArticleSentiment: true,
-    includeArticleCategories: true,
-    includeArticleConcepts: true,
+  const params = new URLSearchParams();
+
+  const addArray = (key: string, values: string[]) => {
+    values.forEach((value) => params.append(key, value));
   };
 
+  params.set('apiKey', String(config.connectors.eventRegistry.apiKey || '').trim());
+  params.set('resultType', 'articles');
+  addArray('keyword', keywordPayload);
+  params.set('keywordLoc', 'body,title');
+  addArray('lang', ['eng']);
+  addArray('dataType', ['news']);
+  params.set('dateStart', dateStart);
+  params.set('dateEnd', dateEnd);
+  params.set('articlesPage', '1');
+  params.set('articlesCount', String(maxArticles));
+  params.set('articlesSortBy', 'date');
+  params.set('articlesSortByAsc', 'false');
+  params.set('articleBodyLen', '-1');
+  params.set('includeArticleTitle', 'true');
+  params.set('includeArticleBasicInfo', 'true');
+  params.set('includeArticleBody', 'true');
+  params.set('includeArticleSentiment', 'true');
+  params.set('includeArticleCategories', 'true');
+  params.set('includeArticleConcepts', 'true');
+
   if (Array.isArray(keywordPayload)) {
-    payload.keywordOper = 'or';
+    params.set('keywordOper', 'or');
   }
 
-  const lookbackDays = Math.max(1, Math.round(recencyHours / 24));
-  if (lookbackDays === 7 || lookbackDays === 31) {
-    payload.forceMaxDataTimeWindow = lookbackDays;
-  }
-
-  return payload;
+  return { params, keywordsUsed: keywordPayload.length };
 };
 
 export const fetchEventRegistryCandidates = async (
@@ -333,7 +328,7 @@ export const fetchEventRegistryCandidates = async (
     const budgets = [15, 12, 10, 8];
     let lastErr: any = null;
     for (const budget of budgets) {
-      const payload = buildRequestPayload(
+      const { params, keywordsUsed } = buildRequestParams(
         query,
         config,
         maxArticles,
@@ -342,12 +337,8 @@ export const fetchEventRegistryCandidates = async (
       );
 
       try {
-        const response = await fetch(EVENT_REGISTRY_ENDPOINT, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
+        const response = await fetch(`${EVENT_REGISTRY_ENDPOINT}?${params.toString()}`, {
+          method: 'GET',
           signal: controller.signal,
         });
 
@@ -429,13 +420,18 @@ export const fetchEventRegistryCandidates = async (
               return null;
             }
 
+            const decision = applyPreFilter(candidate.url, candidate.title, candidate.snippet ?? null, rawQueryString);
+            if (!decision.pass) {
+              return null;
+            }
+
             return candidate;
           }).filter((value): value is ConnectorArticle => Boolean(value));
 
         const metrics: Record<string, unknown> = {
           returned: items.length,
           keywordBudget: budget,
-          keywordsUsed: Array.isArray(payload.keyword) ? (payload.keyword as any[]).length : 0,
+          keywordsUsed,
         };
         try {
           metrics.rawReturned = rawResults.length;

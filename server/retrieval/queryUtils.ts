@@ -186,25 +186,3 @@ export const deriveLooseTerms = (
   return results;
 };
 
-export const buildLooseQueryString = (
-  query: string,
-  options: { maxTerms?: number; maxTokensPerTerm?: number; wrapMultiWord?: boolean } = {},
-): string => {
-  const { maxTerms = 6, maxTokensPerTerm = 4, wrapMultiWord = true } = options;
-  const terms = deriveLooseTerms(query, { maxTerms, maxTokensPerTerm });
-  if (!terms.length) {
-    return query.replace(/"/g, ' ').replace(/\s+/g, ' ').trim();
-  }
-  return terms
-    .map((term) => {
-      const trimmed = term.trim();
-      if (!trimmed) return '';
-      if (!wrapMultiWord || !/\s/.test(trimmed)) {
-        return trimmed;
-      }
-      return `"${trimmed}"`;
-    })
-    .filter(Boolean)
-    .join(' OR ');
-};
-

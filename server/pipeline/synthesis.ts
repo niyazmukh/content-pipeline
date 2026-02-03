@@ -1,4 +1,6 @@
 import type { AppConfig } from '../../shared/config';
+import type { SourceCatalogEntry } from '../../shared/types';
+import { applySourceCatalogToEvidence, buildGlobalSourceCatalog } from '../../shared/sourceCatalog';
 import { loadPrompt } from '../prompts/loader';
 import type { StoryCluster } from '../retrieval/types';
 import { LLMService } from '../services/llmService';
@@ -13,6 +15,7 @@ export interface ArticleSynthesisArgs {
   outline: OutlinePayload;
   retrievalClusters: StoryCluster[];
   evidence: EvidenceItem[];
+  sourceCatalog?: SourceCatalogEntry[];
   previousArticle?: string | null;
   recencyHours: number;
   config: AppConfig;
@@ -30,16 +33,11 @@ export interface ArticleSynthesisResult {
   rawResponse: string;
   attempts: number;
   noveltyScore: number;
+  sourceCatalog: SourceCatalogEntry[];
   warnings: string[];
 }
 
-interface SourceRecord {
-  id: number;
-  title: string;
-  url: string;
-  source: string;
-  publishedAt?: string | null;
-}
+type SourceRecord = SourceCatalogEntry;
 
 const sanitizeSingleLine = (value: string): string =>
   value.replace(/\s+/g, ' ').replace(/[\r\n]+/g, ' ').trim();
@@ -52,50 +50,80 @@ const toWordCount = (text: string): number => {
 const buildEvidenceDigest = (items: EvidenceItem[]): string =>
   items
     .map(
-      (item, idx) =>
-        `Outline point ${idx + 1}: ${item.point}\n${item.digest || 'No fresh evidence found.'}`,
+      (item) =>
+        `Outline point ${item.outlineIndex + 1}: ${item.point}\n${item.digest || 'No fresh evidence found.'}`,
     )
     .join('\n\n');
 
-const buildSourceCatalog = (
-  items: EvidenceItem[],
-  clusters: StoryCluster[],
-): SourceRecord[] => {
-  const map = new Map<string, SourceRecord>();
-  let idCounter = 1;
+const normalizeSourceCatalog = (
+  value: unknown,
+): SourceCatalogEntry[] | null => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null;
+  }
 
-  const register = (title: string, url: string, source: string, publishedAt?: string | null) => {
-    const key = url.trim();
-    if (!key) {
-      return;
-    }
-    if (!map.has(key)) {
-      map.set(key, {
-        id: idCounter,
-        title,
-        url,
-        source,
-        publishedAt: publishedAt ?? null,
-      });
-      idCounter += 1;
-    }
-  };
+  const entries: SourceCatalogEntry[] = [];
+  const ids = new Set<number>();
+  const urls = new Set<string>();
 
-  items.forEach((entry) => {
-    entry.citations.forEach((citation) => {
-      register(citation.title, citation.url, citation.source, citation.publishedAt);
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') {
+      return null;
+    }
+    const rec = raw as Record<string, unknown>;
+    const id = typeof rec.id === 'number' ? rec.id : NaN;
+    const url = typeof rec.url === 'string' ? rec.url.trim() : '';
+    const title = typeof rec.title === 'string' ? rec.title.trim() : '';
+    const source = typeof rec.source === 'string' ? rec.source.trim() : '';
+    const publishedAt = typeof rec.publishedAt === 'string' ? rec.publishedAt : null;
+
+    if (!Number.isFinite(id) || id <= 0) return null;
+    if (!url) return null;
+    if (ids.has(id)) return null;
+    if (urls.has(url)) return null;
+
+    ids.add(id);
+    urls.add(url);
+    entries.push({
+      id,
+      url,
+      title: title || url,
+      source: source || 'Source',
+      publishedAt,
     });
+  }
+
+  entries.sort((a, b) => a.id - b.id);
+  return entries;
+};
+
+const buildMergedSourceCatalog = (args: {
+  provided?: SourceCatalogEntry[];
+  evidence: EvidenceItem[];
+  clusters: StoryCluster[];
+}): SourceCatalogEntry[] => {
+  const computed = buildGlobalSourceCatalog({
+    clusters: args.clusters,
+    evidence: args.evidence,
+    maxSources: 80,
   });
 
-  clusters.forEach((cluster) => {
-    const rep = cluster.representative;
-    register(rep.title, rep.canonicalUrl, rep.sourceName ?? rep.sourceHost, rep.publishedAt);
-    cluster.members.forEach((member) => {
-      register(member.title, member.canonicalUrl, member.sourceName ?? member.sourceHost, member.publishedAt);
-    });
-  });
+  const provided = args.provided && args.provided.length ? normalizeSourceCatalog(args.provided) : null;
+  if (!provided) {
+    return computed;
+  }
 
-  return Array.from(map.values());
+  const byUrl = new Map<string, SourceCatalogEntry>(provided.map((e) => [e.url.trim(), e]));
+  let maxId = provided.reduce((m, e) => Math.max(m, e.id), 0);
+
+  for (const entry of computed) {
+    const url = entry.url.trim();
+    if (!url || byUrl.has(url)) continue;
+    maxId += 1;
+    byUrl.set(url, { ...entry, id: maxId });
+  }
+
+  return Array.from(byUrl.values()).sort((a, b) => a.id - b.id);
 };
 
 const buildRepairInstruction = (errors: string[]): string =>
@@ -148,6 +176,7 @@ export const synthesizeArticle = async ({
   outline,
   retrievalClusters,
   evidence,
+  sourceCatalog: sourceCatalogOverride,
   recencyHours,
   previousArticle,
   config,
@@ -170,14 +199,20 @@ export const synthesizeArticle = async ({
     null,
     2,
   );
-  const evidenceText = buildEvidenceDigest(evidence);
-  const sourceCatalog = buildSourceCatalog(evidence, retrievalClusters);
-  const sourcesJson = JSON.stringify(sourceCatalog, null, 2);
+  const resolvedCatalog = buildMergedSourceCatalog({
+    provided: sourceCatalogOverride,
+    evidence,
+    clusters: retrievalClusters,
+  });
+  const normalizedEvidence = applySourceCatalogToEvidence(evidence, resolvedCatalog);
+  const orderedEvidence = normalizedEvidence.slice().sort((a, b) => a.outlineIndex - b.outlineIndex);
+  const evidenceText = buildEvidenceDigest(orderedEvidence);
+  const sourcesJson = JSON.stringify(resolvedCatalog, null, 2);
   const prevArticle = previousArticle || '';
   const isoDateRe = /^\d{4}-\d{2}-\d{2}$/u;
   const availableDates = Array.from(
     new Set(
-      sourceCatalog
+      resolvedCatalog
         .map((s) => (s.publishedAt ? s.publishedAt.split('T')[0] : null))
         .filter((d): d is string => Boolean(d && isoDateRe.test(d))),
     ),
@@ -185,13 +220,13 @@ export const synthesizeArticle = async ({
     .sort()
     .reverse();
   const narrativeDateTarget = Math.min(3, availableDates.length);
-  const distinctSourceTarget = Math.max(1, Math.min(6, sourceCatalog.length));
+  const distinctSourceTarget = Math.max(1, Math.min(6, resolvedCatalog.length));
   const availableDatesText = availableDates.length
     ? availableDates.slice(0, 12).map((d) => `- ${d}`).join('\n')
     : 'none';
-  const keyDevMin = Math.max(1, Math.min(5, sourceCatalog.length));
-  const keyDevMax = Math.max(keyDevMin, Math.min(7, sourceCatalog.length || 7));
-  const keyDevelopmentsSection = buildKeyDevelopmentsSection(sourceCatalog, { min: keyDevMin, max: keyDevMax });
+  const keyDevMin = Math.max(1, Math.min(5, resolvedCatalog.length));
+  const keyDevMax = Math.max(keyDevMin, Math.min(7, resolvedCatalog.length || 7));
+  const keyDevelopmentsSection = buildKeyDevelopmentsSection(resolvedCatalog, { min: keyDevMin, max: keyDevMax });
 
   let attempt = 0;
   let rawResponse = '';
@@ -275,7 +310,7 @@ export const synthesizeArticle = async ({
       }
       if (ordered.length) {
         const subset = ordered
-          .map((n) => sourceCatalog.find((s) => s.id === n))
+          .map((n) => resolvedCatalog.find((s) => s.id === n))
           .filter((s): s is SourceRecord => Boolean(s))
           .map((s) => ({ id: s.id, title: s.title, url: s.url }));
         if (subset.length) sourcesArr = subset;
@@ -283,8 +318,8 @@ export const synthesizeArticle = async ({
     }
 
     // Absolute fallback: take first N from catalog if body lacks citations
-    if ((!sourcesArr || !sourcesArr.length) && Array.isArray(sourceCatalog) && sourceCatalog.length) {
-      sourcesArr = sourceCatalog.slice(0, 10).map((s) => ({ id: s.id, title: s.title, url: s.url }));
+    if ((!sourcesArr || !sourcesArr.length) && Array.isArray(resolvedCatalog) && resolvedCatalog.length) {
+      sourcesArr = resolvedCatalog.slice(0, 10).map((s) => ({ id: s.id, title: s.title, url: s.url }));
     }
 
     const wordCount = typeof raw?.wordCount === 'number' && raw.wordCount > 0 ? raw.wordCount : toWordCount(body);
@@ -368,8 +403,8 @@ export const synthesizeArticle = async ({
     }
 
     // Enforce that all citation IDs used exist in the provided Source Catalog.
-    const catalogIds = new Set(sourceCatalog.map((s) => s.id));
-    const catalogUrls = new Set(sourceCatalog.map((s) => s.url));
+    const catalogIds = new Set(resolvedCatalog.map((s) => s.id));
+    const catalogUrls = new Set(resolvedCatalog.map((s) => s.url));
     const missingCatalogIds: number[] = [];
     const citationRe = /\[(\d+)]/g;
     const usedCitationIds = new Set<number>();
@@ -393,7 +428,7 @@ export const synthesizeArticle = async ({
     if (usedCitationIds.size > 0) {
       const normalizedSources = Array.from(usedCitationIds)
         .sort((a, b) => a - b)
-        .map((id) => sourceCatalog.find((s) => s.id === id))
+        .map((id) => resolvedCatalog.find((s) => s.id === id))
         .filter((s): s is SourceRecord => Boolean(s))
         .map((s) => ({ id: s.id, title: s.title, url: s.url }));
 
@@ -472,6 +507,7 @@ export const synthesizeArticle = async ({
       rawResponse,
       attempts: attempt,
       noveltyScore,
+      sourceCatalog: resolvedCatalog,
       warnings: latestWarnings,
     };
   }

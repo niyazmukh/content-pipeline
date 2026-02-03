@@ -2,7 +2,7 @@ export class Semaphore {
   private readonly waiters: Array<() => void> = [];
   private available: number;
 
-  constructor(private readonly capacity: number) {
+  constructor(capacity: number) {
     this.available = Math.max(0, Math.floor(capacity));
   }
 
@@ -53,27 +53,3 @@ export class Semaphore {
     }
   }
 }
-
-export const runWithPool = async <T>(
-  total: number,
-  concurrency: number,
-  worker: (index: number) => Promise<T>,
-): Promise<T[]> => {
-  const results = new Array<T>(total);
-  const cap = Math.max(1, Math.floor(concurrency));
-  let nextIndex = 0;
-
-  const runners = new Array(Math.min(cap, total)).fill(null).map(async () => {
-    while (true) {
-      const idx = nextIndex;
-      nextIndex += 1;
-      if (idx >= total) {
-        break;
-      }
-      results[idx] = await worker(idx);
-    }
-  });
-
-  await Promise.all(runners);
-  return results;
-};

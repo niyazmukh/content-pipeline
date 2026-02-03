@@ -1,4 +1,4 @@
-export type { StageEvent, StageName, StageStatus } from '../../shared/types';
+export type { StageEvent, StageName } from '../../shared/types';
 
 import type { StageEvent, StageName } from '../../shared/types';
 

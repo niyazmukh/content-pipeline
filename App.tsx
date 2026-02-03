@@ -11,6 +11,7 @@ import type {
   RetrievalMetrics,
   ApiConfigResponse,
   ApiHealthResponse,
+  SourceCatalogEntry,
 } from './shared/types';
 import { DEFAULT_TOPIC_QUERY } from './shared/defaultTopicQuery';
 import PipelineStatus from './components/PipelineStatus';
@@ -24,6 +25,7 @@ import { LoaderIcon, SparklesIcon } from './components/icons';
 import { loadApiKeys, saveApiKeys, clearApiKeys, type ApiKeys } from './services/apiKeys';
 import IntroModal from './components/IntroModal';
 import HelpTip from './components/HelpTip';
+import { applySourceCatalogToEvidence, buildGlobalSourceCatalog } from './shared/sourceCatalog';
 
 const STAGES: StageName[] = ['retrieval', 'ranking', 'outline', 'targetedResearch', 'synthesis', 'imagePrompt'];
 
@@ -71,6 +73,7 @@ const App: React.FC = () => {
   const [clusters, setClusters] = useState<StoryCluster[]>([]);
   const [outline, setOutline] = useState<OutlinePayload | null>(null);
   const [evidence, setEvidence] = useState<EvidenceItem[]>([]);
+  const [sourceCatalog, setSourceCatalog] = useState<SourceCatalogEntry[]>([]);
   const [runId, setRunId] = useState<string>('');
   const [articleResult, setArticleResult] = useState<ArticleGenerationResult | null>(null);
   const [imagePrompts, setImagePrompts] = useState<ImagePromptSlide[]>([]);
@@ -86,7 +89,7 @@ const App: React.FC = () => {
   const [healthError, setHealthError] = useState<string>('');
   const [stageMessages, setStageMessages] = useState<Record<StageName, string>>(buildInitialStageMessages);
   const [stageEventLog, setStageEventLog] = useState<Array<StageEvent<unknown>>>([]);
-  const [targetedProgress, setTargetedProgress] = useState<{ completed: number; total: number; currentIndex: number | null } | null>(null);
+  const [targetedProgress, setTargetedProgress] = useState<{ completed: number; total: number; skipped: number; currentIndex: number | null } | null>(null);
   const [showIntro, setShowIntro] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('gcp_pipeline_intro_dismissed_v1') !== '1';
@@ -136,6 +139,7 @@ const App: React.FC = () => {
     setClusters([]);
     setOutline(null);
     setEvidence([]);
+    setSourceCatalog([]);
     setRunId('');
     setArticleResult(null);
     setImagePrompts([]);
@@ -199,6 +203,102 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const tokenize = useCallback((text: string): Set<string> => {
+    return new Set(
+      String(text || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, ' ')
+        .split(/\s+/)
+        .map((t) => t.trim())
+        .filter((t) => t.length > 3),
+    );
+  }, []);
+
+  const computeOverlapScore = useCallback((topicText: string, pointText: string): number => {
+    const topicTokens = tokenize(topicText);
+    const pointTokens = tokenize(pointText);
+    if (topicTokens.size === 0 || pointTokens.size === 0) return 0;
+    let hits = 0;
+    for (const t of pointTokens) {
+      if (topicTokens.has(t)) hits += 1;
+    }
+    return hits / Math.max(1, topicTokens.size);
+  }, [tokenize]);
+
+  const pickTargetedResearchIndices = useCallback(
+    (args: { topic: string; outline: OutlinePayload; clusters: StoryCluster[] }) => {
+      const points = Array.isArray(args.outline.outline) ? args.outline.outline : [];
+      if (points.length <= 2) {
+        return points.map((_p, idx) => idx);
+      }
+
+      const scoreByClusterId = new Map<string, number>();
+      for (const cluster of args.clusters || []) {
+        scoreByClusterId.set(cluster.clusterId, Number(cluster.score) || 0);
+      }
+
+      const scored = points.map((p, idx) => {
+        const supports = Array.isArray(p.supports) ? p.supports : [];
+        const supportScore = supports.reduce((sum, id) => sum + (scoreByClusterId.get(id) ?? 0), 0);
+        const overlap = computeOverlapScore(args.topic, `${p.point} ${p.summary || ''}`);
+        // Support score dominates; overlap is a small tiebreaker.
+        const score = supportScore + overlap * 0.25;
+        return { idx, score };
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+      const maxScore = scored[0]?.score ?? 0;
+      const cap = Math.min(2, scored.length);
+
+      const thresholded =
+        maxScore > 0
+          ? scored.filter((row) => row.score >= maxScore * 0.6)
+          : scored.filter((row) => row.score > 0);
+
+      const selected = (thresholded.length ? thresholded : scored).slice(0, cap).map((row) => row.idx);
+      return selected;
+    },
+    [computeOverlapScore],
+  );
+
+  const buildSkippedEvidence = useCallback((args: {
+    outlineIndex: number;
+    point: { point: string; summary?: string; supports: string[] };
+    clusters: StoryCluster[];
+  }): EvidenceItem => {
+    const byId = new Map<string, StoryCluster>();
+    for (const c of args.clusters || []) byId.set(c.clusterId, c);
+
+    const sources = (args.point.supports || [])
+      .map((id) => byId.get(id)?.representative)
+      .filter((rep): rep is StoryCluster['representative'] => Boolean(rep))
+      .slice(0, 3);
+
+    const citations = sources.map((rep, idx) => ({
+      id: idx + 1,
+      title: rep.title,
+      url: rep.canonicalUrl,
+      source: rep.sourceName ?? rep.sourceHost,
+      publishedAt: rep.publishedAt ?? null,
+    }));
+
+    const lines = sources.map((rep) => {
+      const date = rep.publishedAt ? rep.publishedAt.split('T')[0] : 'Undated';
+      const source = rep.sourceName ?? rep.sourceHost;
+      const title = rep.title;
+      const url = rep.canonicalUrl;
+      const excerpt = rep.excerpt || '';
+      return `${date} - ${source}: ${title} (${url})\nKey points: ${excerpt}`;
+    });
+
+    return {
+      outlineIndex: args.outlineIndex,
+      point: args.point.point,
+      digest: lines.length ? lines.join('\n\n') : 'Targeted research skipped for this point (low relevance).',
+      citations,
+    };
+  }, []);
+
   const runPipeline = useCallback(async () => {
     if (!topic.trim()) {
       setError('Topic is required.');
@@ -222,39 +322,89 @@ const App: React.FC = () => {
 
       setStageStates((prev) => ({ ...prev, targetedResearch: 'start' }));
       const outlinePoints = outlineResult.outline.outline;
-      setTargetedProgress({ completed: 0, total: outlinePoints.length, currentIndex: outlinePoints.length ? 0 : null });
-      const evidenceItems: EvidenceItem[] = [];
+      const indicesToResearch = pickTargetedResearchIndices({
+        topic: topic.trim(),
+        outline: outlineResult.outline,
+        clusters: outlineResult.clusters,
+      });
+      const selected = new Set(indicesToResearch);
+      const skipped = Math.max(0, outlinePoints.length - indicesToResearch.length);
+      setTargetedProgress({ completed: 0, total: indicesToResearch.length, skipped, currentIndex: indicesToResearch.length ? indicesToResearch[0] : null });
+
+      const evidenceItems: Array<EvidenceItem | undefined> = new Array(outlinePoints.length);
+
       for (let i = 0; i < outlinePoints.length; i += 1) {
-        setStageStates((prev) => ({ ...prev, targetedResearch: 'progress' }));
-        setTargetedProgress((prev) => (prev ? { ...prev, currentIndex: i } : { completed: 0, total: outlinePoints.length, currentIndex: i }));
-        const item = await runTargetedResearchPoint(
-          {
-            runId: outlineResult.runId,
-            topic: topic.trim(),
-            outlineIndex: i,
-            point: outlinePoints[i].point,
-            summary: outlinePoints[i].summary,
-            recencyHours: outlineResult.recencyHours,
-          },
-          handleStageEvent,
-        );
-        evidenceItems.push(item);
-        setEvidence([...evidenceItems]);
-        setTargetedProgress((prev) => (prev ? { ...prev, completed: i + 1 } : { completed: i + 1, total: outlinePoints.length, currentIndex: null }));
+        if (selected.has(i)) continue;
+        const p = outlinePoints[i];
+        evidenceItems[i] = buildSkippedEvidence({
+          outlineIndex: i,
+          point: { point: p.point, summary: p.summary, supports: Array.isArray(p.supports) ? p.supports : [] },
+          clusters: outlineResult.clusters,
+        });
       }
+      setEvidence(evidenceItems.filter((value): value is EvidenceItem => Boolean(value)).sort((a, b) => a.outlineIndex - b.outlineIndex));
+
+      const maxConcurrent = Math.min(2, Math.max(1, indicesToResearch.length));
+      let nextIndex = 0;
+      let completed = 0;
+
+      const workers = new Array(maxConcurrent).fill(null).map(async () => {
+        while (true) {
+          const i = nextIndex;
+          nextIndex += 1;
+          if (i >= indicesToResearch.length) break;
+          const outlineIndex = indicesToResearch[i];
+          setStageStates((prev) => ({ ...prev, targetedResearch: 'progress' }));
+          setTargetedProgress((prev) => (prev ? { ...prev, currentIndex: outlineIndex } : { completed: 0, total: indicesToResearch.length, skipped, currentIndex: outlineIndex }));
+          const item = await runTargetedResearchPoint(
+            {
+              runId: outlineResult.runId,
+              topic: topic.trim(),
+              outlineIndex,
+              point: outlinePoints[outlineIndex].point,
+              summary: outlinePoints[outlineIndex].summary,
+              recencyHours: outlineResult.recencyHours,
+            },
+            handleStageEvent,
+          );
+          evidenceItems[outlineIndex] = item;
+          completed += 1;
+          setEvidence(evidenceItems.filter((value): value is EvidenceItem => Boolean(value)).sort((a, b) => a.outlineIndex - b.outlineIndex));
+          setTargetedProgress((prev) => (prev ? { ...prev, completed } : { completed, total: indicesToResearch.length, skipped, currentIndex: null }));
+        }
+      });
+
+      await Promise.all(workers);
       setStageStates((prev) => ({ ...prev, targetedResearch: 'success' }));
       setTargetedProgress((prev) => (prev ? { ...prev, currentIndex: null, completed: prev.total } : null));
+
+      const finalizedEvidence = evidenceItems
+        .filter((value): value is EvidenceItem => Boolean(value))
+        .sort((a, b) => a.outlineIndex - b.outlineIndex);
+
+      const catalog = buildGlobalSourceCatalog({
+        clusters: outlineResult.clusters,
+        evidence: finalizedEvidence,
+        maxSources: 80,
+      });
+      const normalizedEvidence = applySourceCatalogToEvidence(finalizedEvidence, catalog);
+      setSourceCatalog(catalog);
+      setEvidence(normalizedEvidence);
 
       const article = await generateArticle({
         runId: outlineResult.runId,
         topic: topic.trim(),
         outline: outlineResult.outline,
         clusters: outlineResult.clusters,
-        evidence: evidenceItems,
+        evidence: normalizedEvidence,
+        sourceCatalog: catalog,
         recencyHours: outlineResult.recencyHours,
       }, handleStageEvent);
 
       setArticleResult(article);
+      if (Array.isArray(article.sourceCatalog) && article.sourceCatalog.length) {
+        setSourceCatalog(article.sourceCatalog);
+      }
 
       const image = await generateImagePrompt({
         runId: outlineResult.runId,
@@ -282,15 +432,18 @@ const App: React.FC = () => {
         return `${outline.outline.length} outline points`;
       }
       if (stage === 'targetedResearch' && outline) {
-        const total = outline.outline.length;
-        const completed = evidence.length;
+        const totalOutline = outline.outline.length;
+        const researchedTotal = targetedProgress?.total ?? totalOutline;
+        const completed = targetedProgress?.completed ?? Math.min(evidence.length, researchedTotal);
+        const skipped = targetedProgress?.skipped ?? Math.max(0, totalOutline - researchedTotal);
         const runningIndex = targetedProgress?.currentIndex;
         if (Number.isFinite(runningIndex ?? NaN) && runningIndex != null) {
-          return `Researching ${runningIndex + 1}/${total} (done ${completed}/${total})`;
+          return `Researching ${runningIndex + 1}/${totalOutline} (researched ${completed}/${researchedTotal}, skipped ${skipped})`;
         }
-        if (total > 0) {
-          return `Done ${Math.min(completed, total)}/${total}`;
+        if (researchedTotal > 0) {
+          return `Researched ${Math.min(completed, researchedTotal)}/${researchedTotal} (skipped ${skipped})`;
         }
+        return skipped > 0 ? `Skipped ${skipped}/${totalOutline}` : undefined;
       }
       if (stage === 'synthesis' && articleResult) {
         return `${articleResult.article.wordCount} words`;
@@ -308,8 +461,6 @@ const App: React.FC = () => {
       detail: detailForStage(stage),
     }));
   }, [articleResult, clusters.length, evidence.length, imagePrompts.length, outline, retrievalMetrics, stageMessages, stageStates, targetedProgress]);
-
-  const canGenerateArticle = outline && evidence.length > 0 && clusters.length > 0;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -592,6 +743,10 @@ const App: React.FC = () => {
               <div className="text-xs text-slate-400">
                 Run ID: <span className="font-mono text-slate-200">{runId || '-'}</span>
               </div>
+              <div className="text-xs text-slate-400">
+                Source catalog:{' '}
+                <span className="font-mono text-slate-200">{sourceCatalog.length ? `${sourceCatalog.length} sources` : '-'}</span>
+              </div>
 
               <div className="text-xs text-slate-400">
                 Client keys:{' '}
@@ -715,4 +870,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

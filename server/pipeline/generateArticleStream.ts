@@ -1,5 +1,6 @@
 import type { AppConfig } from '../../shared/config';
 import type { SseStream } from '../../shared/sse';
+import type { SourceCatalogEntry } from '../../shared/types';
 import type { StoryCluster } from '../retrieval/types';
 import { makeStageEmitter } from './stageEmitter';
 import type { EvidenceItem, OutlinePayload } from './types';
@@ -21,6 +22,7 @@ interface ArticleRequestBody {
   outline: OutlinePayload;
   clusters: StoryCluster[];
   evidence: EvidenceItem[];
+  sourceCatalog?: SourceCatalogEntry[];
   recencyHours?: number;
   previousArticle?: string | null;
 }
@@ -31,7 +33,8 @@ const isArticleRequestBody = (value: unknown): value is ArticleRequestBody =>
   typeof (value as ArticleRequestBody).topic === 'string' &&
   typeof (value as ArticleRequestBody).outline === 'object' &&
   Array.isArray((value as ArticleRequestBody).clusters) &&
-  Array.isArray((value as ArticleRequestBody).evidence);
+  Array.isArray((value as ArticleRequestBody).evidence) &&
+  (((value as ArticleRequestBody).sourceCatalog == null) || Array.isArray((value as ArticleRequestBody).sourceCatalog));
 
 export const handleGenerateArticleStream = async ({
   body,
@@ -68,6 +71,7 @@ export const handleGenerateArticleStream = async ({
       outline: body.outline,
       retrievalClusters: body.clusters,
       evidence: body.evidence,
+      sourceCatalog: body.sourceCatalog,
       recencyHours,
       previousArticle: body.previousArticle,
       config,
@@ -75,6 +79,9 @@ export const handleGenerateArticleStream = async ({
       signal,
     });
 
+    if (result.sourceCatalog?.length) {
+      await store.saveRunArtifact(body.runId, 'source_catalog', result.sourceCatalog);
+    }
     await store.saveRunArtifact(body.runId, 'article', result);
 
     stage.success({
@@ -83,6 +90,7 @@ export const handleGenerateArticleStream = async ({
         article: result.article,
         noveltyScore: result.noveltyScore,
         warnings: result.warnings,
+        sourceCatalog: result.sourceCatalog,
       },
     });
     stream.close();

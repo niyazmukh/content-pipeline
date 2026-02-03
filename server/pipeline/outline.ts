@@ -2,7 +2,6 @@ import type { AppConfig } from '../../shared/config';
 import { loadPrompt } from '../prompts/loader';
 import type { StoryCluster } from '../retrieval/types';
 import { LLMService } from '../services/llmService';
-import { sleep } from '../utils/async';
 import type { Logger } from '../obs/logger';
 import { validateOutline, OutlinePayload } from './validators';
 import { describeRecencyWindow } from '../utils/text';
@@ -40,16 +39,14 @@ const serializeClusters = (clusters: StoryCluster[]) => {
 const buildAliasMaps = (clusters: StoryCluster[]) => {
   const aliasToId = new Map<string, string>();
   const idToDate = new Map<string, string | null>();
-  const aliasToDate = new Map<string, string | null>();
   clusters.forEach((cluster, index) => {
     const alias = `C${String(index + 1).padStart(2, '0')}`;
     aliasToId.set(alias, cluster.clusterId);
     const date = cluster.representative.publishedAt?.split('T')[0] || null;
     idToDate.set(cluster.clusterId, date);
-    aliasToDate.set(alias, date);
   });
   const validIds = new Set(clusters.map((c) => c.clusterId));
-  return { aliasToId, idToDate, aliasToDate, validIds };
+  return { aliasToId, idToDate, validIds };
 };
 
 const normalizeIsoDate = (value: string | null | undefined): string | null => {
@@ -68,7 +65,7 @@ const mapAliasesAndDates = (
   requiredUniqueDates: number,
   requiredDistinctClusters: number,
 ): OutlinePayload => {
-  const { aliasToId, idToDate, aliasToDate, validIds } = buildAliasMaps(clusters);
+  const { aliasToId, idToDate, validIds } = buildAliasMaps(clusters);
   const copy: OutlinePayload = JSON.parse(JSON.stringify(parsed));
   const globalDateSet = new Set<string>();
 
@@ -118,7 +115,6 @@ const mapAliasesAndDates = (
 
   // Ensure we reach requiredUniqueDates globally by adding missing dates from other clusters
   if (requiredUniqueDates > 0 && globalDateSet.size < requiredUniqueDates) {
-    const needed = requiredUniqueDates - globalDateSet.size;
     const availableDates: string[] = [];
     for (const [_, d] of idToDate) {
       const iso = normalizeIsoDate(d);

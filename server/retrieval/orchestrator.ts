@@ -1,6 +1,5 @@
 import type { AppConfig } from '../../shared/config';
 import type { Logger } from '../obs/logger';
-import { sleep } from '../utils/async';
 import { fetchGoogleCandidates } from './connectors/google';
 import { fetchGoogleNewsRssCandidates } from './connectors/googleNewsRss';
 import { fetchNewsApiCandidates } from './connectors/newsapi';
@@ -414,15 +413,15 @@ export const retrieveUnified = async (
     await Promise.all(workers);
 
     // Semantic Deduplication
-    const dedupResult = deduplicateArticles(extractedArticles);
+    const dedupResult = deduplicateArticles(extractedArticles, { enableSimilarity: false });
     const uniqueArticles = dedupResult.unique;
 
     // Rank and Cluster
     const { ranked, clusters } = rankAndClusterArticles(uniqueArticles, {
-        recencyHours,
-        maxClusters: 5,
-        clusterThreshold: 0.65,
-        attachThreshold: 0.55
+      recencyHours,
+      maxClusters: 5,
+      clusterThreshold: config.retrieval.clusterThreshold ?? 0.65,
+      attachThreshold: config.retrieval.attachThreshold ?? 0.55,
     });
 
     const topArticles = ranked.slice(0, maxCandidates);

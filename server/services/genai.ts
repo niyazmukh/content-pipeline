@@ -48,14 +48,6 @@ const getStateForApiKey = (apiKey: string): KeyState => {
   return created;
 };
 
-export const ensureGeminiClient = (config: AppConfig): GoogleGenAI => {
-  if (!config.llm.apiKey) {
-    throw new Error('GEMINI_API_KEY missing in environment');
-  }
-
-  return getStateForApiKey(config.llm.apiKey).client;
-};
-
 const parseRetryDelayMs = (error: unknown): number | null => {
   try {
     const details = (error as any)?.error?.details || (error as any)?.details || [];

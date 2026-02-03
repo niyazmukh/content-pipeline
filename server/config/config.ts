@@ -135,8 +135,3 @@ export const loadConfig = (): AppConfig => {
 };
 
 export const getPublicConfig = (config: AppConfig = loadConfig()): PublicConfig => getPublicConfigShared(config);
-
-export const refreshConfig = (): AppConfig => {
-  cachedConfig = null;
-  return loadConfig();
-};

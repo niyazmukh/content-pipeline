@@ -61,9 +61,6 @@ export const fetchNewsApiCandidates = async (
   const from = new Date(Date.now() - recencyHours * 60 * 60 * 1000).toISOString();
   const to = new Date().toISOString();
 
-  const items: ConnectorArticle[] = [];
-  let page = 1;
-
   const controller = new AbortController();
   let abortListener: (() => void) | null = null;
   if (options.signal) {

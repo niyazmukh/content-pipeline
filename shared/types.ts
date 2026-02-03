@@ -119,21 +119,15 @@ export interface EvidenceItem {
   outlineIndex: number;
   point: string;
   digest: string;
-  citations: Array<{
-    id: number;
-    title: string;
-    url: string;
-    source: string;
-    publishedAt?: string | null;
-  }>;
+  citations: SourceCatalogEntry[];
 }
 
-export interface RunAgentSuccessPayload {
-  runId: string;
-  recencyHours: number;
-  outline: OutlinePayload;
-  evidence: EvidenceItem[];
-  clusters: StoryCluster[];
+export interface SourceCatalogEntry {
+  id: number;
+  title: string;
+  url: string;
+  source: string;
+  publishedAt?: string | null;
 }
 
 export interface ArticleGenerationResult {
@@ -146,6 +140,7 @@ export interface ArticleGenerationResult {
   };
   noveltyScore: number;
   warnings?: string[];
+  sourceCatalog?: SourceCatalogEntry[];
 }
 
 export interface ImagePromptSlide {

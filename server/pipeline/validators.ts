@@ -1,6 +1,6 @@
 import type { StoryCluster } from '../retrieval/types';
 
-export type { OutlinePayload, OutlinePoint } from '../../shared/types';
+export type { OutlinePayload } from '../../shared/types';
 
 import type { OutlinePayload } from '../../shared/types';
 

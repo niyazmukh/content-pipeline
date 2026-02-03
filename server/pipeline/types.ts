@@ -1,1 +1,1 @@
-export type { EvidenceItem, OutlinePayload, RunAgentSuccessPayload } from '../../shared/types';
+export type { EvidenceItem, OutlinePayload } from '../../shared/types';

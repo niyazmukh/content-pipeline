@@ -48,6 +48,10 @@ export const extractBatch = async ({
   logger,
   signal,
 }: ExtractBatchArgs): Promise<ExtractBatchResult> => {
+  const minAccepted = Math.max(1, config.retrieval.minAccepted || 1);
+  const maxAttempts = Math.max(1, config.retrieval.maxAttempts || 1);
+  const deadlineAt = Date.now() + Math.max(1, config.retrieval.totalBudgetMs || 1);
+
   const queryTokens = tokenizeForRelevance(mainQuery, { maxTokens: 24 });
   const filterOptions = {
     recencyHours,
@@ -83,19 +87,58 @@ export const extractBatch = async ({
     return created;
   };
 
-  const workerCount = Math.min(candidates.length, Math.max(1, config.retrieval.globalConcurrency || 1));
+  const providerQueues = new Map<ProviderName, RetrievalCandidate[]>([
+    ['google', []],
+    ['googlenews', []],
+    ['newsapi', []],
+    ['eventregistry', []],
+  ]);
+  for (const candidate of candidates) {
+    const provider = candidate.provider as ProviderName;
+    providerQueues.get(provider)?.push(candidate);
+  }
+
+  const orderedCandidates: RetrievalCandidate[] = [];
+  const providers: ProviderName[] = ['google', 'googlenews', 'newsapi', 'eventregistry'];
+  let added = 0;
+  while (added < Math.min(candidates.length, maxAttempts)) {
+    let progressed = false;
+    for (const provider of providers) {
+      const queue = providerQueues.get(provider);
+      const next = queue?.shift();
+      if (!next) continue;
+      orderedCandidates.push(next);
+      added += 1;
+      progressed = true;
+      if (added >= Math.min(candidates.length, maxAttempts)) break;
+    }
+    if (!progressed) break;
+  }
+
+  const workerCount = Math.min(orderedCandidates.length, Math.max(1, config.retrieval.globalConcurrency || 1));
   let nextIndex = 0;
+  let attempts = 0;
+  let acceptedCount = 0;
+
+  const shouldStop = (): boolean => {
+    if (Date.now() >= deadlineAt) return true;
+    if (attempts >= maxAttempts) return true;
+    if (acceptedCount >= minAccepted) return true;
+    return false;
+  };
 
   const workers = new Array(workerCount).fill(null).map(async () => {
     while (true) {
+      if (shouldStop()) break;
       const idx = nextIndex;
       nextIndex += 1;
-      if (idx >= candidates.length) break;
+      if (idx >= orderedCandidates.length) break;
 
-      const candidate = candidates[idx];
+      const candidate = orderedCandidates[idx];
       const provider = candidate.provider as ProviderName;
       const bucket = providerMetrics.get(provider);
       if (bucket) bucket.extractionAttempts += 1;
+      attempts += 1;
 
       const host = getHost(candidate.url);
       const releaseGlobal = await globalSemaphore.acquire(signal);
@@ -124,6 +167,7 @@ export const extractBatch = async ({
           if (decision.accept) {
             accepted.push(outcome.article);
             if (bucket) bucket.accepted += 1;
+            acceptedCount += 1;
           } else {
             if (bucket) bucket.preFiltered += 1;
             if (bucket && decision.reasons.length) {
@@ -153,7 +197,7 @@ export const extractBatch = async ({
 
   logger.info('Batch extraction complete', {
     runId,
-    candidates: candidates.length,
+    candidates: orderedCandidates.length,
     accepted: accepted.length,
     errors: extractionErrors.length,
   });

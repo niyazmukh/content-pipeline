@@ -380,7 +380,7 @@ app.get('/api/article/:id', async (req: Request, res: Response) => {
 });
 
 // Explicit run artifact endpoint: /api/runs/:runId/artifacts/:kind
-// kind examples: retrieval_batch, retrieval_clusters, outline, targeted_research, article, image_prompt
+// kind examples: retrieval_batch, retrieval_clusters, outline, targeted_research, source_catalog, article, image_prompt
 app.get('/api/runs/:runId/artifacts/:kind', async (req: Request, res: Response) => {
   const runId = String(req.params.runId || '').trim();
   const kind = String(req.params.kind || '').trim();

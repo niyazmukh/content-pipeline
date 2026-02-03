@@ -1,5 +1,4 @@
 import type { Response } from 'express';
-import type { StageEvent } from '../pipeline/stageEmitter';
 import type { SseStreamOptions, SseStream } from '../../shared/sse';
 
 export const createSseStream = (res: Response, options: SseStreamOptions): SseStream => {

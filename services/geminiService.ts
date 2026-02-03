@@ -10,6 +10,7 @@ import type {
   RetrievalMetrics,
   RetrievalProviderMetrics,
   RetrievalCandidate,
+  SourceCatalogEntry,
 } from '../shared/types';
 import { streamSseRequest } from './sseClient';
 import { buildAuthHeaders } from './apiKeys';
@@ -385,6 +386,7 @@ interface GenerateArticlePayload {
   outline: OutlinePayload;
   clusters: StoryCluster[];
   evidence: EvidenceItem[];
+  sourceCatalog?: SourceCatalogEntry[];
   recencyHours: number;
   previousArticle?: string | null;
 }

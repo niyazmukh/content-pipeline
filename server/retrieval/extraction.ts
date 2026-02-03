@@ -294,6 +294,7 @@ interface CachedOutcome {
 
 const extractionCache = new Map<string, CachedOutcome>();
 let cacheSweepCounter = 0;
+const MAX_CACHE_ENTRIES = 2000;
 
 const normalizeCacheKey = (url: string): string => {
   try {
@@ -344,6 +345,11 @@ const storeOutcome = (keys: string[], outcome: ExtractionOutcome, ttlMs: number,
       continue;
     }
     extractionCache.set(key, { outcome: stored, expiresAt });
+  }
+  while (extractionCache.size > MAX_CACHE_ENTRIES) {
+    const oldestKey = extractionCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    extractionCache.delete(oldestKey);
   }
 };
 

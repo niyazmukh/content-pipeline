@@ -3,7 +3,7 @@ import { hashString, randomId } from '../../../shared/crypto';
 import type { ConnectorResult, ConnectorArticle } from '../types';
 import { applyPreFilter } from '../preFilter';
 
-const GOOGLE_SEARCH_ENDPOINT = 'https://www.googleapis.com/customsearch/v1';
+const GOOGLE_SEARCH_ENDPOINT = 'https://customsearch.googleapis.com/customsearch/v1';
 
 export interface GoogleConnectorOptions {
   maxResults?: number;

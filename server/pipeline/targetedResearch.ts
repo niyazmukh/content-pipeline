@@ -58,9 +58,7 @@ const formatDigest = (
     const citationId = idx + 1;
     const rep = cluster.representative;
     const published = rep.publishedAt ? rep.publishedAt.split('T')[0] : 'Unknown date';
-    lines.push(
-      `[${citationId}] ${published} - ${rep.sourceName ?? rep.sourceHost}: ${rep.title}. Key points: ${rep.excerpt}`,
-    );
+    lines.push(`${published} - ${rep.sourceName ?? rep.sourceHost}: ${rep.title} (${rep.canonicalUrl})\nKey points: ${rep.excerpt}`);
     citations.push({
       id: citationId,
       title: rep.title,
