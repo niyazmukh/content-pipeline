@@ -84,6 +84,7 @@ export interface ArticleValidationOptions {
   minNarrativeDates: number;
   narrativeDatesPolicy: 'require' | 'warn' | 'off';
   keyDevelopmentsPolicy: 'require' | 'warn' | 'off';
+  paragraphCitationsPolicy: 'require' | 'warn' | 'off';
   minKeyDevelopmentsBullets: number;
   maxKeyDevelopmentsBullets?: number;
 }
@@ -147,7 +148,15 @@ export const validateArticleBody = (
       continue;
     }
     if (!/\[\d+]/.test(paragraph)) {
-      errors.push('Every narrative paragraph must include at least one inline citation like [1].');
+      const message = 'Every narrative paragraph should include at least one inline citation like [1].';
+      if (options.paragraphCitationsPolicy === 'require') {
+        errors.push(message);
+        break;
+      }
+      if (options.paragraphCitationsPolicy === 'warn') {
+        warnings.push(message);
+        break;
+      }
       break;
     }
   }

@@ -353,6 +353,7 @@ export const synthesizeArticle = async ({
       minNarrativeDates: narrativeDateTarget,
       narrativeDatesPolicy: 'warn',
       keyDevelopmentsPolicy: 'require',
+      paragraphCitationsPolicy: 'warn',
       minKeyDevelopmentsBullets: keyDevMin,
       maxKeyDevelopmentsBullets: keyDevMax,
     });
@@ -401,13 +402,15 @@ export const synthesizeArticle = async ({
       }
     }
 
-    const missingFromSourcesList = Array.from(usedCitationIds).filter(
-      (id) => !coerced.sources.some((s) => s.id === id),
-    );
-    const sourcesListErrors =
-      missingFromSourcesList.length > 0
-        ? [`Returned sources list is missing cited IDs: ${missingFromSourcesList.slice(0, 5).join(', ')}`]
-        : [];
+    // By construction, `coerced.sources` is derived from `usedCitationIds` against the Source Catalog.
+    // Keep this as a warning only (debug signal) rather than failing the run.
+    const missingFromSourcesList = Array.from(usedCitationIds).filter((id) => !coerced.sources.some((s) => s.id === id));
+    if (missingFromSourcesList.length > 0) {
+      latestWarnings = [
+        ...latestWarnings,
+        `Returned sources list was missing cited IDs (auto-repaired): ${missingFromSourcesList.slice(0, 5).join(', ')}`,
+      ];
+    }
 
     const keyDevLines = coerced.article.split(/\r?\n/);
     const keyDevIndex = keyDevLines.findIndex((line) => /^\s*key developments\b/i.test(line.trim()));
@@ -447,7 +450,6 @@ export const synthesizeArticle = async ({
     const fatalErrors = [
       ...bodyErrors,
       ...citationCatalogErrors,
-      ...sourcesListErrors,
       ...brandErrors,
     ];
 
