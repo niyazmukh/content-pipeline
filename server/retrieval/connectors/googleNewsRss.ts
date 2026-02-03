@@ -110,20 +110,23 @@ export const fetchGoogleNewsRssCandidates = async (
 
     const url = decodeXmlEntities((linkRaw || '').trim());
     if (!url) continue;
+    const canonicalUrl = url.replace('https://news.google.com/rss/articles/', 'https://news.google.com/articles/');
 
-    const title = stripTags(decodeXmlEntities(titleRaw || url)) || url;
+    const title = stripTags(decodeXmlEntities(titleRaw || canonicalUrl)) || canonicalUrl;
     const snippet = descRaw ? stripTags(decodeXmlEntities(descRaw)) : null;
     const publishedAt = parsePubDateToIso(pubDateRaw);
 
-    const decision = applyPreFilter(url, title, snippet, query);
+    // Google News RSS "link" URLs are under `/rss/articles/`, which our generic prefilter flags as non-article.
+    // Rewrite to the equivalent `/articles/` URL before filtering/extraction.
+    const decision = applyPreFilter(canonicalUrl, title, snippet, query);
     if (!decision.pass) {
       continue;
     }
 
     items.push({
-      id: buildArticleId(url),
+      id: buildArticleId(canonicalUrl),
       title,
-      url,
+      url: canonicalUrl,
       sourceName: source.name,
       publishedAt,
       snippet,
@@ -131,6 +134,7 @@ export const fetchGoogleNewsRssCandidates = async (
         sourceName: source.name,
         sourceUrl: source.url,
         pubDate: pubDateRaw,
+        rssUrl: url,
       },
     });
 
@@ -148,4 +152,3 @@ export const fetchGoogleNewsRssCandidates = async (
     },
   };
 };
-
