@@ -13,6 +13,33 @@ export interface GoogleConnectorOptions {
 
 const buildArticleId = (url: string) => hashString(url || randomId());
 
+const NEWS_ONLY_BLOCKED_HOSTS = [
+  'facebook.com',
+  'instagram.com',
+  'tiktok.com',
+  'x.com',
+  'twitter.com',
+  't.co',
+  'linkedin.com',
+  'youtube.com',
+  'youtu.be',
+  'reddit.com',
+  'old.reddit.com',
+  'substack.com',
+  'medium.com',
+  'quora.com',
+  'pinterest.com',
+] as const;
+
+const isBlockedNewsOnlyHost = (rawUrl: string): boolean => {
+  try {
+    const host = new URL(rawUrl).hostname.toLowerCase();
+    return NEWS_ONLY_BLOCKED_HOSTS.some((blocked) => host === blocked || host.endsWith(`.${blocked}`));
+  } catch {
+    return false;
+  }
+};
+
 export const fetchGoogleCandidates = async (
   query: string,
   config: AppConfig,
@@ -133,6 +160,9 @@ export const fetchGoogleCandidates = async (
         })
         .filter((article) => {
           if (!article.url) return false;
+          if (config.connectors.googleCse.newsOnly && isBlockedNewsOnlyHost(article.url)) {
+            return false;
+          }
           // Keep only recency-conformant items when date known; otherwise keep
           if (article.publishedAt) {
             const publishedMs = Date.parse(article.publishedAt);

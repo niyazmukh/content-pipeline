@@ -86,6 +86,7 @@ export const buildWorkerConfig = (keys: RequestKeys, env: WorkerEnv = {}): AppCo
         apiKey: resolvedGoogleKey || undefined,
         searchEngineId: resolvedGoogleCx || undefined,
         enabled: Boolean(resolvedGoogleKey && resolvedGoogleCx),
+        newsOnly: true,
       },
       newsApi: {
         apiKey: resolvedNewsKey || undefined,

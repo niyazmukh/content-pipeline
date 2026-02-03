@@ -64,6 +64,7 @@ const buildConfig = (): AppConfig => {
         apiKey: process.env.GOOGLE_CSE_API_KEY || undefined,
         searchEngineId: process.env.GOOGLE_CSE_SEARCH_ENGINE_ID || process.env.GOOGLE_CSE_CX || undefined,
         enabled: booleanFromEnv(process.env.GOOGLE_CSE_ENABLED, true),
+        newsOnly: booleanFromEnv(process.env.GOOGLE_CSE_NEWS_ONLY, true),
       },
       newsApi: {
         apiKey: process.env.NEWS_API_KEY || process.env.NEWSAPI_KEY || undefined,

@@ -36,6 +36,12 @@ export const ConfigSchema = z.object({
       apiKey: z.string().optional(),
       searchEngineId: z.string().optional(),
       enabled: z.boolean(),
+      /**
+       * Custom Search (Programmable Search Engine) is not a dedicated "Google News tab".
+       * When enabled, we aggressively filter out obvious non-news hosts (social/video/forums)
+       * to keep the pipeline focused on news-style articles.
+       */
+      newsOnly: z.boolean().default(true),
     }),
     newsApi: z.object({
       apiKey: z.string().optional(),
