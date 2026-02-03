@@ -32,8 +32,21 @@ export interface NormalizedArticle {
   };
 }
 
+export type CandidateProvider = 'google' | 'newsapi' | 'eventregistry';
+
+export interface RetrievalCandidate {
+  id: string;
+  provider: CandidateProvider;
+  title: string;
+  url: string;
+  sourceName?: string | null;
+  publishedAt?: string | null;
+  snippet?: string | null;
+  providerData?: Record<string, unknown> | null;
+}
+
 export interface RetrievalProviderMetrics {
-  provider: 'google' | 'newsapi' | 'eventregistry';
+  provider: CandidateProvider;
   query?: string;
   returned: number;
   /**

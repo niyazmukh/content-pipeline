@@ -7,6 +7,10 @@ import { handleGenerateOutlineStream } from '../../server/pipeline/generateOutli
 import { handleGenerateArticleStream } from '../../server/pipeline/generateArticleStream';
 import { handleGenerateImagePromptStream } from '../../server/pipeline/generateImagePromptStream';
 import { handleTargetedResearchStream } from '../../server/pipeline/targetedResearchStream';
+import { retrieveCandidates } from '../../server/pipeline/retrieveCandidates';
+import { extractBatch } from '../../server/pipeline/extractBatch';
+import { clusterArticles } from '../../server/pipeline/clusterArticles';
+import { createLogger } from '../../server/obs/logger';
 import { createWorkerSseStream } from './sse';
 import { buildWorkerConfig, getRequestKeys, type WorkerEnv } from './config';
 
@@ -271,6 +275,111 @@ export default {
       });
 
       return new Response(stream, { headers: sseHeaders(origin) });
+    }
+
+    if (url.pathname === '/api/retrieve-candidates' && request.method === 'GET') {
+      const missing = ensureGeminiKey(config);
+      if (missing) return missing;
+
+      const topic = String(url.searchParams.get('topic') || url.searchParams.get('topicQuery') || '').trim();
+      if (!topic) {
+        const headers = new Headers();
+        withCors(headers, origin);
+        return jsonResponse({ error: 'Missing topic query' }, { status: 400, headers });
+      }
+
+      const recencyHoursRaw = url.searchParams.get('recencyHours');
+      const recencyHoursOverride = recencyHoursRaw ? Number(recencyHoursRaw) : undefined;
+      const runId = String(url.searchParams.get('runId') || '').trim();
+
+      const logger = createLogger(config);
+      try {
+        const result = await retrieveCandidates({
+          runId: runId || undefined,
+          topic,
+          recencyHoursOverride: Number.isFinite(recencyHoursOverride) ? recencyHoursOverride : undefined,
+          config,
+          logger,
+          signal: request.signal,
+        });
+        const headers = new Headers();
+        withCors(headers, origin);
+        return jsonResponse(result, { headers });
+      } catch (error) {
+        const headers = new Headers();
+        withCors(headers, origin);
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonResponse({ error: message }, { status: 500, headers });
+      }
+    }
+
+    if (url.pathname === '/api/extract-batch' && request.method === 'POST') {
+      const body = await request.json().catch(() => null);
+      const logger = createLogger(config);
+
+      const runId = typeof (body as any)?.runId === 'string' ? String((body as any).runId) : '';
+      const mainQuery = typeof (body as any)?.mainQuery === 'string' ? String((body as any).mainQuery) : '';
+      const candidates = Array.isArray((body as any)?.candidates) ? ((body as any).candidates as any[]) : [];
+      const recencyHours = typeof (body as any)?.recencyHours === 'number' ? Number((body as any).recencyHours) : config.recencyHours;
+
+      if (!runId || !mainQuery || !Array.isArray(candidates)) {
+        const headers = new Headers();
+        withCors(headers, origin);
+        return jsonResponse({ error: 'Invalid payload' }, { status: 400, headers });
+      }
+
+      try {
+        const result = await extractBatch({
+          runId,
+          mainQuery,
+          recencyHours,
+          candidates: candidates as any,
+          config,
+          logger,
+          signal: request.signal,
+        });
+        const headers = new Headers();
+        withCors(headers, origin);
+        return jsonResponse(result, { headers });
+      } catch (error) {
+        const headers = new Headers();
+        withCors(headers, origin);
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonResponse({ error: message }, { status: 500, headers });
+      }
+    }
+
+    if (url.pathname === '/api/cluster-articles' && request.method === 'POST') {
+      const body = await request.json().catch(() => null);
+      const logger = createLogger(config);
+
+      const runId = typeof (body as any)?.runId === 'string' ? String((body as any).runId) : '';
+      const articles = Array.isArray((body as any)?.articles) ? ((body as any).articles as any[]) : [];
+      const recencyHours = typeof (body as any)?.recencyHours === 'number' ? Number((body as any).recencyHours) : config.recencyHours;
+
+      if (!runId || !Array.isArray(articles)) {
+        const headers = new Headers();
+        withCors(headers, origin);
+        return jsonResponse({ error: 'Invalid payload' }, { status: 400, headers });
+      }
+
+      try {
+        const result = await clusterArticles({
+          runId,
+          articles: articles as any,
+          recencyHours,
+          config,
+          logger,
+        });
+        const headers = new Headers();
+        withCors(headers, origin);
+        return jsonResponse(result, { headers });
+      } catch (error) {
+        const headers = new Headers();
+        withCors(headers, origin);
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonResponse({ error: message }, { status: 500, headers });
+      }
     }
 
       if (url.pathname === '/api/generate-article-stream' && request.method === 'POST') {

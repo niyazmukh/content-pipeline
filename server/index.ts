@@ -14,6 +14,9 @@ import { handleGenerateImagePromptStream } from './pipeline/generateImagePromptS
 import { createFsArtifactStore } from './persistence/fsStore';
 import { handleTargetedResearchStream } from './pipeline/targetedResearchStream';
 import { createLogger } from './obs/logger';
+import { retrieveCandidates } from './pipeline/retrieveCandidates';
+import { extractBatch } from './pipeline/extractBatch';
+import { clusterArticles } from './pipeline/clusterArticles';
 
 const config = loadConfig();
 const store = createFsArtifactStore(config);
@@ -41,7 +44,7 @@ logger.info('Config loaded', {
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '10mb' }));
 
 if (config.observability.logLevel === 'debug') {
   app.use((req, res, next) => {
@@ -196,6 +199,93 @@ app.get('/api/retrieve-stream', async (req: Request, res: Response) => {
     store,
     signal: stream.controller.signal,
   });
+});
+
+app.get('/api/retrieve-candidates', async (req: Request, res: Response) => {
+  const topic = String(req.query.topic ?? req.query.topicQuery ?? '').trim();
+  if (!topic) {
+    res.status(400).json({ error: 'Missing topic query' });
+    return;
+  }
+
+  const runId = String(req.query.runId ?? '').trim();
+  const recencyHoursOverride = parseRecencyHours(req.query.recencyHours, config.recencyHours);
+  const requestConfig = applyRequestConfigOverrides(config, req);
+  const requestLogger = createLogger(requestConfig);
+
+  try {
+    const result = await retrieveCandidates({
+      runId: runId || undefined,
+      topic,
+      recencyHoursOverride,
+      config: requestConfig,
+      logger: requestLogger,
+    });
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/extract-batch', async (req: Request, res: Response) => {
+  const requestConfig = applyRequestConfigOverrides(config, req);
+  const requestLogger = createLogger(requestConfig);
+  const body = req.body as any;
+
+  const runId = typeof body?.runId === 'string' ? body.runId : '';
+  const mainQuery = typeof body?.mainQuery === 'string' ? body.mainQuery : '';
+  const candidates = Array.isArray(body?.candidates) ? body.candidates : [];
+  const recencyHours = typeof body?.recencyHours === 'number' ? body.recencyHours : requestConfig.recencyHours;
+
+  if (!runId || !mainQuery || !Array.isArray(candidates)) {
+    res.status(400).json({ error: 'Invalid payload' });
+    return;
+  }
+
+  try {
+    const result = await extractBatch({
+      runId,
+      mainQuery,
+      recencyHours,
+      candidates,
+      config: requestConfig,
+      logger: requestLogger,
+    });
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/cluster-articles', async (req: Request, res: Response) => {
+  const requestConfig = applyRequestConfigOverrides(config, req);
+  const requestLogger = createLogger(requestConfig);
+  const body = req.body as any;
+
+  const runId = typeof body?.runId === 'string' ? body.runId : '';
+  const articles = Array.isArray(body?.articles) ? body.articles : [];
+  const recencyHours = typeof body?.recencyHours === 'number' ? body.recencyHours : requestConfig.recencyHours;
+
+  if (!runId || !Array.isArray(articles)) {
+    res.status(400).json({ error: 'Invalid payload' });
+    return;
+  }
+
+  try {
+    const result = await clusterArticles({
+      runId,
+      articles,
+      recencyHours,
+      config: requestConfig,
+      logger: requestLogger,
+    });
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: message });
+  }
 });
 
 app.post('/api/generate-outline-stream', async (req: Request, res: Response) => {
