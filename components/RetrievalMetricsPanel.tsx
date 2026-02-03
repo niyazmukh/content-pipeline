@@ -11,6 +11,14 @@ const providerLabels: Record<RetrievalProviderMetrics['provider'], string> = {
   eventregistry: 'EventRegistry',
 };
 
+const formatReasonCounts = (reasons: Record<string, number> | undefined): string => {
+  if (!reasons) return '';
+  const entries = Object.entries(reasons).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return '';
+  const head = entries.slice(0, 3).map(([k, v]) => `${k}×${v}`).join(', ');
+  return entries.length > 3 ? `${head}, …` : head;
+};
+
 const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }) => {
   if (!metrics) {
     return null;
@@ -54,7 +62,7 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
             Candidates {metrics.candidateCount} | Accepted {metrics.accepted} | Duplicates removed {metrics.duplicatesRemoved}
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Returned counts are connector candidates; extraction attempts depend on the global extraction budget and may be 0 if a provider is skipped.
+            Returned counts are connector candidates; extraction attempts are budget-limited. "Skipped" shows how many unique URLs were not even queued for extraction.
           </p>
         </div>
         <div className="text-xs text-slate-400 text-right leading-tight">
@@ -82,7 +90,8 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
             <tr>
               <th className="px-3 py-2 font-medium">Provider</th>
               <th className="px-3 py-2 font-medium text-right" title="How many candidates the connector returned before extraction.">Returned</th>
-              <th className="px-3 py-2 font-medium text-right" title="Rejected after extraction (low quality, off-topic, too promotional) or filtered by URL de-dupe.">Pre-filtered</th>
+              <th className="px-3 py-2 font-medium text-right" title="Unique URLs skipped due to the extraction budget/time limits (not opened).">Skipped</th>
+              <th className="px-3 py-2 font-medium text-right" title="Rejected after extraction (low quality, off-topic, too promotional).">Rejected</th>
               <th className="px-3 py-2 font-medium text-right" title="How many candidate URLs were actually opened and processed (budget-limited).">Extraction attempts</th>
               <th className="px-3 py-2 font-medium text-right" title="How many extracted articles passed filters and were accepted.">Accepted</th>
               <th className="px-3 py-2 font-medium text-right" title="Accepted/reviewed articles with missing or unknown publish date.">Missing dates</th>
@@ -92,6 +101,7 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
           <tbody>
             {perProvider.map((provider) => {
               const providerErrorCount = Array.isArray(provider.extractionErrors) ? provider.extractionErrors.length : 0;
+              const rejectionSummary = formatReasonCounts(provider.rejectionReasons);
               return (
                 <tr key={provider.provider} className="border-t border-slate-800">
                   <th scope="row" className="px-3 py-2 font-semibold text-slate-200">
@@ -116,6 +126,11 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
                         {provider.query}
                       </div>
                     )}
+                    {rejectionSummary && (
+                      <div className="mt-1 text-xs text-slate-500 font-normal truncate max-w-[28rem]" title={rejectionSummary}>
+                        Rejected: {rejectionSummary}
+                      </div>
+                    )}
                     {provider.error && (
                       <div className="mt-1 text-xs text-red-300 font-normal truncate max-w-[28rem]" title={provider.error}>
                         {provider.error}
@@ -123,6 +138,9 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
                     )}
                   </th>
                   <td className="px-3 py-2 text-right">{provider.returned}</td>
+                  <td className="px-3 py-2 text-right" title={provider.unique != null ? `Unique after de-dupe: ${provider.unique}` : undefined}>
+                    {provider.skipped ?? Math.max(0, (provider.unique ?? provider.returned) - (provider.queued ?? provider.extractionAttempts))}
+                  </td>
                   <td className="px-3 py-2 text-right">{provider.preFiltered}</td>
                   <td className="px-3 py-2 text-right">{provider.extractionAttempts}</td>
                   <td className="px-3 py-2 text-right">{provider.accepted}</td>

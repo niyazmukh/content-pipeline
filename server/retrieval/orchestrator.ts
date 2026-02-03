@@ -35,6 +35,24 @@ interface CandidateRecord extends ConnectorArticle {
   provider: ProviderName;
 }
 
+const computeCandidateScore = (candidate: CandidateRecord, queryTokens: string[]): number => {
+  const title = candidate.title || '';
+  const snippet = candidate.snippet || '';
+  const content = `${title} ${snippet}`.trim();
+  if (!content) return 0;
+
+  const contentTokens = new Set(tokenizeForRelevance(content, { maxTokens: 96 }));
+  if (!queryTokens.length) return 1;
+  let matches = 0;
+  for (const token of queryTokens) {
+    if (contentTokens.has(token)) matches += 1;
+  }
+  const overlap = matches / queryTokens.length;
+  const lengthBonus = Math.min(1, content.length / 240) * 0.15;
+  const dateBonus = candidate.publishedAt ? 0.05 : 0;
+  return overlap + lengthBonus + dateBonus;
+};
+
 const uniquenessKey = (url: string): string => {
   try {
     const parsed = new URL(url);
@@ -207,11 +225,18 @@ export const retrieveUnified = async (
     // Simple URL deduplication
     const seenUrls = new Set<string>();
     const uniqueCandidates: CandidateRecord[] = [];
+    const dedupedCounts = new Map<ProviderName, number>([
+      ['google', 0],
+      ['newsapi', 0],
+      ['eventregistry', 0],
+    ]);
     for (const c of allCandidates) {
       const key = uniquenessKey(c.url);
       if (!seenUrls.has(key)) {
         seenUrls.add(key);
         uniqueCandidates.push(c);
+      } else {
+        dedupedCounts.set(c.provider, (dedupedCounts.get(c.provider) ?? 0) + 1);
       }
     }
 
@@ -229,7 +254,24 @@ export const retrieveUnified = async (
       providerQueues.get(candidate.provider)?.push(candidate);
     }
 
+    // Sort each provider queue so the limited extraction budget is spent on the most likely relevant candidates.
+    for (const provider of ['google', 'newsapi', 'eventregistry'] as ProviderName[]) {
+      const queue = providerQueues.get(provider) ?? [];
+      queue.sort((a, b) => computeCandidateScore(b, queryTokens) - computeCandidateScore(a, queryTokens));
+      providerQueues.set(provider, queue);
+      const bucket = providerMetrics.get(provider);
+      if (bucket) {
+        bucket.deduped = dedupedCounts.get(provider) ?? 0;
+        bucket.unique = queue.length;
+      }
+    }
+
     const candidatesToTry: CandidateRecord[] = [];
+    const queuedCounts = new Map<ProviderName, number>([
+      ['google', 0],
+      ['newsapi', 0],
+      ['eventregistry', 0],
+    ]);
     while (candidatesToTry.length < attemptBudget) {
       let progressed = false;
       for (const provider of ['google', 'newsapi', 'eventregistry'] as ProviderName[]) {
@@ -238,10 +280,28 @@ export const retrieveUnified = async (
         const next = queue?.shift();
         if (!next) continue;
         candidatesToTry.push(next);
+        queuedCounts.set(provider, (queuedCounts.get(provider) ?? 0) + 1);
         progressed = true;
       }
       if (!progressed) break;
     }
+
+    for (const provider of ['google', 'newsapi', 'eventregistry'] as ProviderName[]) {
+      const bucket = providerMetrics.get(provider);
+      if (!bucket) continue;
+      bucket.queued = queuedCounts.get(provider) ?? 0;
+      const unique = typeof bucket.unique === 'number' ? bucket.unique : undefined;
+      const queued = typeof bucket.queued === 'number' ? bucket.queued : 0;
+      if (unique != null) {
+        bucket.skipped = Math.max(0, unique - queued);
+      }
+    }
+
+    const rejectionReasons = new Map<ProviderName, Record<string, number>>([
+      ['google', {}],
+      ['newsapi', {}],
+      ['eventregistry', {}],
+    ]);
     const globalSemaphore = new Semaphore(Math.max(1, config.retrieval.globalConcurrency || 1));
     const perHostLimit = Math.max(1, config.retrieval.perHostConcurrency || 1);
     const hostSemaphores = new Map<string, Semaphore>();
@@ -321,6 +381,11 @@ export const retrieveUnified = async (
               if (m) m.accepted++;
             } else {
               if (m) m.preFiltered++;
+              const bucket = rejectionReasons.get(candidate.provider) ?? {};
+              for (const reason of decision.reasons) {
+                bucket[reason] = (bucket[reason] ?? 0) + 1;
+              }
+              rejectionReasons.set(candidate.provider, bucket);
             }
           } else if (outcome.error) {
             const msg = outcome.error;
@@ -360,6 +425,15 @@ export const retrieveUnified = async (
     );
 
     const providerSummaries = Array.from(providerMetrics.values());
+    for (const entry of providerSummaries) {
+      const reasons = rejectionReasons.get(entry.provider);
+      if (reasons && Object.keys(reasons).length) {
+        entry.rejectionReasons = reasons;
+      }
+      if (typeof entry.queued === 'number') {
+        entry.skipped = Math.max(0, (entry.unique ?? entry.returned) - entry.queued);
+      }
+    }
 
     const attemptedExtractions = providerSummaries.reduce(
       (sum, entry) => sum + (typeof entry.extractionAttempts === 'number' ? entry.extractionAttempts : 0),

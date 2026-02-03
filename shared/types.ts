@@ -36,6 +36,23 @@ export interface RetrievalProviderMetrics {
   provider: 'google' | 'newsapi' | 'eventregistry';
   query?: string;
   returned: number;
+  /**
+   * Candidates removed by URL de-duplication before extraction selection.
+   * (Returned counts include duplicates; extraction operates on unique URLs.)
+   */
+  deduped?: number;
+  /**
+   * Unique candidates remaining after URL de-duplication.
+   */
+  unique?: number;
+  /**
+   * Candidates selected into the extraction queue (budgeted).
+   */
+  queued?: number;
+  /**
+   * Unique candidates skipped due to extraction budget or early stopping.
+   */
+  skipped?: number;
   preFiltered: number;
   extractionAttempts: number;
   accepted: number;
@@ -44,6 +61,7 @@ export interface RetrievalProviderMetrics {
   failed?: boolean;
   error?: string | null;
   extractionErrors: Array<{ url: string; error: string }>;
+  rejectionReasons?: Record<string, number>;
 }
 
 export interface RetrievalMetrics {
