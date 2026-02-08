@@ -101,6 +101,12 @@ const App: React.FC = () => {
       apiKeys.newsApiKey ||
       apiKeys.eventRegistryApiKey,
   );
+  const keyPresence = {
+    gemini: Boolean(apiKeys.geminiApiKey),
+    googleCse: Boolean(apiKeys.googleCseApiKey && apiKeys.googleCseCx),
+    newsApi: Boolean(apiKeys.newsApiKey),
+    eventRegistry: Boolean(apiKeys.eventRegistryApiKey),
+  };
 
   useEffect(() => {
     fetchPublicConfig()
@@ -753,6 +759,13 @@ const App: React.FC = () => {
                 <span className="text-slate-200">
                   {hasUserKeys ? 'provided' : 'not provided (using default backend keys if available)'}
                 </span>
+              </div>
+              <div className="text-xs text-slate-400">
+                Client key details:{' '}
+                <span className="font-mono text-slate-200">Gemini={keyPresence.gemini ? 'on' : 'off'}</span>{' '}
+                <span className="font-mono text-slate-200">GoogleCSE={keyPresence.googleCse ? 'on' : 'off'}</span>{' '}
+                <span className="font-mono text-slate-200">NewsAPI={keyPresence.newsApi ? 'on' : 'off'}</span>{' '}
+                <span className="font-mono text-slate-200">EventRegistry={keyPresence.eventRegistry ? 'on' : 'off'}</span>
               </div>
 
               <div className="text-xs text-slate-400">

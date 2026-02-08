@@ -5,7 +5,7 @@ import { applyPreFilter } from '../preFilter';
 
 const GOOGLE_NEWS_RSS_ENDPOINT = 'https://news.google.com/rss/search';
 const GOOGLE_NEWS_HOST = 'news.google.com';
-const MAX_WRAPPER_DECODE_ATTEMPTS = 12;
+const MAX_WRAPPER_DECODE_ATTEMPTS = 20;
 
 export interface GoogleNewsRssConnectorOptions {
   maxResults?: number;
@@ -107,21 +107,39 @@ const fetchDecodingParams = async (
   token: string,
   signal?: AbortSignal,
 ): Promise<{ signature: string; timestamp: string } | null> => {
-  const res = await fetch(`https://${GOOGLE_NEWS_HOST}/articles/${token}`, {
-    method: 'GET',
-    signal,
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml',
-    },
-  });
-  if (!res.ok) return null;
-  const html = await res.text();
-  const signature = (html.match(/data-n-a-sg="([^"]+)"/) || [])[1] || '';
-  const timestamp = (html.match(/data-n-a-ts="([^"]+)"/) || [])[1] || '';
-  if (!signature || !timestamp) return null;
-  return { signature, timestamp };
+  const paths = [`/articles/${token}`, `/rss/articles/${token}`];
+  const extractFromHtml = (html: string): { signature: string; timestamp: string } | null => {
+    const sig =
+      (html.match(/data-n-a-sg=["']([^"']+)["']/i) || [])[1] ||
+      (html.match(/"data-n-a-sg"\s*:\s*"([^"]+)"/i) || [])[1] ||
+      '';
+    const ts =
+      (html.match(/data-n-a-ts=["']([^"']+)["']/i) || [])[1] ||
+      (html.match(/"data-n-a-ts"\s*:\s*"([^"]+)"/i) || [])[1] ||
+      '';
+    if (!sig || !ts) return null;
+    return { signature: sig, timestamp: ts };
+  };
+
+  for (const p of paths) {
+    const res = await fetch(`https://${GOOGLE_NEWS_HOST}${p}`, {
+      method: 'GET',
+      signal,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+        Referer: `https://${GOOGLE_NEWS_HOST}/`,
+      },
+    });
+    if (!res.ok) continue;
+    const html = await res.text();
+    const parsed = extractFromHtml(html);
+    if (parsed) return parsed;
+  }
+
+  return null;
 };
 
 const decodeViaBatchExecute = async (
@@ -142,6 +160,7 @@ const decodeViaBatchExecute = async (
       'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
       'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+      Referer: `https://${GOOGLE_NEWS_HOST}/`,
     },
     body,
   });
