@@ -121,6 +121,27 @@ const metaDateKeys = [
   'lastmod',
 ];
 
+const publishedMetaDateKeys = [
+  'article:published_time',
+  'og:published_time',
+  'datepublished',
+  'dc.date.issued',
+  'dc.date.published',
+  'citation_publication_date',
+  'parsely-pub-date',
+  'sailthru.date',
+  'publishdate',
+  'pubdate',
+] as const;
+
+const modifiedMetaDateKeys = [
+  'article:modified_time',
+  'og:updated_time',
+  'datemodified',
+  'updated',
+  'lastmod',
+] as const;
+
 const parseDateValue = (value: string | null | undefined): Date | null => {
   if (!value) return null;
   const trimmed = value.trim();
@@ -138,6 +159,15 @@ const parseDateValue = (value: string | null | undefined): Date | null => {
   }
   const date = new Date(parsed);
   return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const isPlausibleDate = (date: Date): boolean => {
+  const ms = date.getTime();
+  if (!Number.isFinite(ms)) return false;
+  const now = Date.now();
+  const min = Date.UTC(2000, 0, 1);
+  const max = now + 2 * 24 * 60 * 60 * 1000;
+  return ms >= min && ms <= max;
 };
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -162,28 +192,144 @@ const findTimeValue = (html: string): string | null => {
   return bodyMatch ? bodyMatch[1].trim() : null;
 };
 
-const extractDates = (html: string) => {
-  const candidates: { date: Date; source: string }[] = [];
+const extractDatesFromJsonLd = (html: string): Array<{ date: Date; kind: 'published' | 'modified' }> => {
+  const out: Array<{ date: Date; kind: 'published' | 'modified' }> = [];
+  const scripts = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) || [];
+  for (const script of scripts) {
+    const dateFields = [
+      { key: 'datePublished', kind: 'published' as const },
+      { key: 'dateCreated', kind: 'published' as const },
+      { key: 'uploadDate', kind: 'published' as const },
+      { key: 'dateModified', kind: 'modified' as const },
+    ];
+    for (const field of dateFields) {
+      const re = new RegExp(`"${field.key}"\\s*:\\s*"([^"]+)"`, 'gi');
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(script)) !== null) {
+        const date = parseDateValue(match[1]);
+        if (!date || !isPlausibleDate(date)) continue;
+        out.push({ date, kind: field.kind });
+      }
+    }
+  }
+  return out;
+};
+
+const extractDateFromUrl = (rawUrl: string): Date | null => {
+  if (!rawUrl) return null;
+  const slash = rawUrl.match(/\/(20\d{2})\/([01]?\d)\/([0-3]?\d)(?:\/|$)/);
+  if (slash) {
+    const iso = `${slash[1]}-${String(slash[2]).padStart(2, '0')}-${String(slash[3]).padStart(2, '0')}`;
+    const d = parseDateValue(iso);
+    return d && isPlausibleDate(d) ? d : null;
+  }
+  const isoPath = rawUrl.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  if (isoPath) {
+    const d = parseDateValue(`${isoPath[1]}-${isoPath[2]}-${isoPath[3]}`);
+    return d && isPlausibleDate(d) ? d : null;
+  }
+  return null;
+};
+
+const inferDateFromText = (text: string): Date | null => {
+  const sample = (text || '').slice(0, 5000);
+  if (!sample) return null;
+
+  const now = Date.now();
+  const cueRe = /\b(published|posted|updated|last updated|posted on|published on|date)\b/i;
+  const scored: Array<{ date: Date; score: number }> = [];
+
+  const pushCandidate = (rawDate: string, idx: number, baseScore: number) => {
+    const date = parseDateValue(rawDate);
+    if (!date || !isPlausibleDate(date)) return;
+    let score = baseScore;
+    const windowStart = Math.max(0, idx - 60);
+    const windowEnd = Math.min(sample.length, idx + 80);
+    const neighborhood = sample.slice(windowStart, windowEnd);
+    if (cueRe.test(neighborhood)) score += 0.35;
+    if (idx < 1200) score += 0.1;
+    const ageDays = Math.max(0, (now - date.getTime()) / (24 * 60 * 60 * 1000));
+    if (ageDays <= 365 * 2) score += 0.1;
+    scored.push({ date, score });
+  };
+
+  const isoRe = /\b20\d{2}-\d{2}-\d{2}\b/g;
+  let isoMatch: RegExpExecArray | null;
+  while ((isoMatch = isoRe.exec(sample)) !== null) {
+    pushCandidate(isoMatch[0], isoMatch.index, 0.45);
+  }
+
+  const monthRe =
+    /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},\s+20\d{2}\b/g;
+  let monthMatch: RegExpExecArray | null;
+  while ((monthMatch = monthRe.exec(sample)) !== null) {
+    pushCandidate(monthMatch[0], monthMatch.index, 0.35);
+  }
+
+  if (!scored.length) return null;
+  scored.sort((a, b) => b.score - a.score || b.date.getTime() - a.date.getTime());
+  const best = scored[0];
+  if (best.score < 0.65) return null;
+  return best.date;
+};
+
+const extractDates = (html: string, textContent: string, rawUrl: string) => {
+  const publishedCandidates: Date[] = [];
+  const modifiedCandidates: Date[] = [];
+  const neutralCandidates: Date[] = [];
+
+  const publishedKeySet = new Set<string>(publishedMetaDateKeys);
+  const modifiedKeySet = new Set<string>(modifiedMetaDateKeys);
+
   for (const key of metaDateKeys) {
     const content = findMetaContent(html, key);
     const date = parseDateValue(content);
-    if (date) candidates.push({ date, source: `meta:${key}` });
+    if (!date || !isPlausibleDate(date)) continue;
+    if (publishedKeySet.has(key)) {
+      publishedCandidates.push(date);
+    } else if (modifiedKeySet.has(key)) {
+      modifiedCandidates.push(date);
+    } else {
+      neutralCandidates.push(date);
+    }
   }
+
   const timeValue = findTimeValue(html);
   const timeDate = parseDateValue(timeValue || undefined);
-  if (timeDate) candidates.push({ date: timeDate, source: 'time' });
-
-  if (!candidates.length) {
-    return { published: null, modified: null };
+  if (timeDate && isPlausibleDate(timeDate)) {
+    neutralCandidates.push(timeDate);
   }
 
-  candidates.sort((a, b) => b.date.getTime() - a.date.getTime());
-  const latest = candidates[0];
-  const earliest = candidates[candidates.length - 1];
+  for (const entry of extractDatesFromJsonLd(html)) {
+    if (entry.kind === 'published') publishedCandidates.push(entry.date);
+    else modifiedCandidates.push(entry.date);
+  }
+
+  const urlDate = extractDateFromUrl(rawUrl);
+  if (urlDate) {
+    neutralCandidates.push(urlDate);
+  }
+
+  if (!publishedCandidates.length && !modifiedCandidates.length && !neutralCandidates.length) {
+    const inferred = inferDateFromText(textContent);
+    return {
+      published: inferred,
+      modified: null,
+    };
+  }
+
+  const pickLatest = (items: Date[]): Date | null => {
+    if (!items.length) return null;
+    items.sort((a, b) => b.getTime() - a.getTime());
+    return items[0];
+  };
+  const allCandidates = [...publishedCandidates, ...modifiedCandidates, ...neutralCandidates];
+  const published = pickLatest(publishedCandidates) ?? pickLatest(neutralCandidates);
+  const modified = pickLatest(modifiedCandidates) ?? pickLatest(allCandidates);
 
   return {
-    published: earliest.date,
-    modified: latest.date,
+    published,
+    modified,
   };
 };
 
@@ -560,7 +706,7 @@ export const extractArticle = async (
     const wordCount = wordTokens.length;
     const excerpt = buildExcerpt(textContent);
 
-    const dates = extractDates(html);
+    const dates = extractDates(html, textContent, canonicalUrl);
     const publishedAt = dates.published?.toISOString() ?? input.publishedAt ?? null;
     const modifiedAt = dates.modified?.toISOString() ?? null;
 
