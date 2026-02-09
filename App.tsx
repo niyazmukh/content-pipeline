@@ -20,8 +20,8 @@ import StoryClusters from './components/StoryClusters';
 import OutlineWithCoverage from './components/OutlineWithCoverage';
 import EvidencePanel from './components/EvidencePanel';
 import ArticlePanel from './components/ArticlePanel';
-import { API_BASE_URL, runPipelineToOutline, runTargetedResearchPoint, generateArticle, generateImagePrompt, fetchPublicConfig, fetchHealth } from './services/geminiService';
-import { LoaderIcon, SparklesIcon } from './components/icons';
+import { runPipelineToOutline, runTargetedResearchPoint, generateArticle, generateImagePrompt, fetchPublicConfig, fetchHealth } from './services/geminiService';
+import { SparklesIcon } from './components/icons';
 import { loadApiKeys, saveApiKeys, clearApiKeys, type ApiKeys } from './services/apiKeys';
 import IntroModal from './components/IntroModal';
 import HelpTip from './components/HelpTip';
@@ -29,6 +29,7 @@ import { applySourceCatalogToEvidence, buildGlobalSourceCatalog } from './shared
 import ApiConfigPanel from './components/ApiConfigPanel';
 import DiagnosticsPanel from './components/DiagnosticsPanel';
 import { Card } from './components/ui/Card';
+import { Button } from './components/ui/Button';
 
 const STAGES: StageName[] = ['retrieval', 'ranking', 'outline', 'targetedResearch', 'synthesis', 'imagePrompt'];
 
@@ -484,18 +485,14 @@ const App: React.FC = () => {
       />
       <header className="max-w-6xl mx-auto px-6 py-10">
         <h1 className="text-3xl font-bold">Intelligence Pipeline</h1>
-        <p className="mt-2 text-slate-400">
+        <p className="mt-2 max-w-3xl text-slate-400 leading-relaxed">
           Unified retrieval, outline, evidence, and synthesis with a configurable recency window.
           Active window: {describeRecencyLabel(runRecencyHours ?? recencyHours)}.
         </p>
         <div className="mt-4">
-          <button
-            type="button"
-            onClick={() => setShowIntro(true)}
-            className="text-xs text-slate-300 hover:text-slate-100 border border-slate-700 rounded px-3 py-1"
-          >
+          <Button type="button" variant="outline" size="sm" onClick={() => setShowIntro(true)}>
             What is this?
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -554,16 +551,18 @@ const App: React.FC = () => {
                 )}
               </div>
             </div>
-            <button
+            <Button
               type="button"
               onClick={runPipeline}
               disabled={isRunning || !configLoaded}
-              className="inline-flex items-center justify-center h-12 px-6 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:cursor-not-allowed transition"
+              size="lg"
+              isLoading={isRunning}
+              className="h-12 min-w-[11rem]"
               title="Runs retrieval -> clustering -> outline -> targeted research -> synthesis."
             >
-              {isRunning ? <LoaderIcon className="w-5 h-5 animate-spin" /> : <SparklesIcon className="w-5 h-5" />}
-              <span className="ml-2 font-semibold">Run pipeline</span>
-            </button>
+              {!isRunning && <SparklesIcon className="w-5 h-5 mr-2" />}
+              <span className="font-semibold">Run pipeline</span>
+            </Button>
           </div>
           {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
         </Card>

@@ -1,38 +1,46 @@
 import React from 'react';
 import type { EvidenceItem } from '../shared/types';
+import { Card } from './ui/Card';
 
 const EvidencePanel: React.FC<{ evidence: EvidenceItem[] }> = ({ evidence }) => (
-  <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow">
-    <h2 className="text-lg font-semibold text-slate-200" title="Evidence is collected per outline point and includes citations used later for synthesis.">
-      Evidence
-    </h2>
-    <div className="mt-4 space-y-4">
+  <Card
+    title="Evidence & Citations"
+    description="Collected evidence per outline point"
+  >
+    <div className="space-y-6">
       {evidence.map((item) => (
-        <article key={item.outlineIndex} className="border border-slate-800 rounded-lg p-4 bg-slate-950/40">
-          <div className="font-semibold text-slate-100">
-            {item.outlineIndex + 1}. {item.point}
+        <div key={item.outlineIndex} className="relative pl-6 border-l-2 border-slate-800 hover:border-blue-500/50 transition-colors">
+          <div className="absolute -left-[5px] top-0 w-2.5 h-2.5 rounded-full bg-slate-800 ring-4 ring-slate-950" />
+          
+          <h3 className="font-semibold text-slate-100 mb-2 text-lg">
+            <span className="text-slate-500 mr-2 text-base font-normal">{item.outlineIndex + 1}.</span>
+            {item.point}
+          </h3>
+          
+          <div className="bg-slate-950/30 rounded-lg p-4 border border-slate-800/50">
+            <pre className="text-sm text-slate-300 whitespace-pre-wrap font-sans leading-relaxed">{item.digest}</pre>
+            
+            {item.citations.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-slate-800/50">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-2">Citations</div>
+                <div className="space-y-1">
+                  {item.citations.slice(0, 6).map((c) => (
+                    <div key={c.id} className="text-sm truncate">
+                      <span className="text-slate-500 font-mono text-xs mr-2">[{c.id}]</span>
+                      <a className="text-blue-400 hover:text-blue-300 hover:underline" href={c.url} target="_blank" rel="noreferrer">
+                        {c.title}
+                      </a>{' '}
+                      <span className="text-slate-500 text-xs">({c.source})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-          <pre className="mt-3 text-sm text-slate-300 whitespace-pre-wrap">{item.digest}</pre>
-          {item.citations.length > 0 ? (
-            <div className="mt-3 text-sm text-slate-300">
-              <div className="text-xs uppercase tracking-wide text-slate-400">Citations</div>
-              <ul className="mt-2 space-y-1">
-                {item.citations.slice(0, 6).map((c) => (
-                  <li key={c.id}>
-                    [{c.id}]{' '}
-                    <a className="text-blue-300 hover:text-blue-200" href={c.url} target="_blank" rel="noreferrer">
-                      {c.title}
-                    </a>{' '}
-                    <span className="text-slate-400">({c.source})</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </article>
+        </div>
       ))}
     </div>
-  </section>
+  </Card>
 );
 
 export default EvidencePanel;
