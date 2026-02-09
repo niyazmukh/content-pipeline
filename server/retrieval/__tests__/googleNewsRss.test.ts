@@ -52,5 +52,31 @@ describe('fetchGoogleNewsRssCandidates', () => {
     expect((result.metrics as any).decodeAttempts).toBe(1);
     expect((result.metrics as any).droppedWrappedUnresolved).toBe(0);
   });
-});
 
+  it('does not fail provider when wrapper decoding hits subrequest limits', async () => {
+    const wrapperUrl =
+      'https://news.google.com/rss/articles/CBMiZkFVX3lxTE9vLWxRM0lHTWZRenhWcno4aE1uQUYwMXA3TUhfQlFFMW93OEJhak0yRjcybEh6RTQxWks1S05ndUtyVWlZNXpKX0IyaTdjOG1DTmxiT3NJR3dJQVk2OGwxeE53d1ZuZw?oc=5';
+    const feedXml = `<?xml version="1.0" encoding="UTF-8"?>
+      <rss><channel>
+      <item>
+        <title>Latest B2B Ecommerce news, research and case studies - Digital Commerce 360</title>
+        <link>${wrapperUrl}</link>
+        <pubDate>Fri, 06 Feb 2026 08:00:00 GMT</pubDate>
+        <description>&lt;a href="${wrapperUrl}"&gt;Latest B2B Ecommerce news, research and case studies&lt;/a&gt;</description>
+        <source url="https://www.digitalcommerce360.com">Digital Commerce 360</source>
+      </item>
+      </channel></rss>`;
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(feedXml, { status: 200, headers: { 'content-type': 'application/rss+xml' } }))
+      .mockRejectedValueOnce(new Error('Too many subrequests.'));
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchGoogleNewsRssCandidates('b2b ecommerce news', configStub);
+    expect(result.provider).toBe('googlenews');
+    expect(Array.isArray(result.items)).toBe(true);
+    expect((result.metrics as any).decodeAttempts).toBe(1);
+  });
+});

@@ -5,7 +5,8 @@ import { applyPreFilter } from '../preFilter';
 
 const GOOGLE_NEWS_RSS_ENDPOINT = 'https://news.google.com/rss/search';
 const GOOGLE_NEWS_HOST = 'news.google.com';
-const MAX_WRAPPER_DECODE_ATTEMPTS = 20;
+// Keep wrapper decoding bounded so the connector doesn't exceed Worker subrequest budgets.
+const MAX_WRAPPER_DECODE_ATTEMPTS = 8;
 
 export interface GoogleNewsRssConnectorOptions {
   maxResults?: number;
@@ -281,12 +282,23 @@ export const fetchGoogleNewsRssCandidates = async (
 
   const resolvedByIndex = new Map<number, string | null>();
   let decodeAttempts = 0;
+  let decodeErrors = 0;
   for (let i = 0; i < parsedItems.length && decodeAttempts < MAX_WRAPPER_DECODE_ATTEMPTS; i += 1) {
     const item = parsedItems[i];
     if (!item.url.includes(`${GOOGLE_NEWS_HOST}/articles/`)) continue;
     decodeAttempts += 1;
-    const resolved = await resolveGoogleWrapperUrl(item.url, options.signal);
-    resolvedByIndex.set(i, resolved);
+    try {
+      const resolved = await resolveGoogleWrapperUrl(item.url, options.signal);
+      resolvedByIndex.set(i, resolved);
+    } catch (error) {
+      decodeErrors += 1;
+      const message = error instanceof Error ? error.message : String(error);
+      // Cloudflare Worker hard limit: stop decoding immediately and continue with what we already resolved.
+      if (message.toLowerCase().includes('too many subrequests')) {
+        break;
+      }
+      resolvedByIndex.set(i, null);
+    }
   }
 
   const items: ConnectorArticle[] = [];
@@ -333,6 +345,7 @@ export const fetchGoogleNewsRssCandidates = async (
       totalReturned: Math.max(0, parts.length - 1),
       droppedWrappedUnresolved,
       decodeAttempts,
+      decodeErrors,
     },
   };
 };
