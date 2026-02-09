@@ -101,7 +101,7 @@ describe('extractArticle date inference', () => {
 
   it('returns skip marker when wrapper decode is unavailable', async () => {
     const wrapperUrl =
-      'https://news.google.com/articles/CBMiZkFVX3lxTE9vLWxRM0lHTWZRenhWcno4aE1uQUYwMXA3TUhfQlFFMW93OEJhak0yRjcybEh6RTQxWks1S05ndUtyVWlZNXpKX0IyaTdjOG1DTmxiT3NJR3dJQVk2OGwxeE53d1ZuZw?oc=5';
+      'https://news.google.com/articles/CBMiaEFVX3lxTE9vLWxRM0lHTWZRenhWcno4aE1uQUYwMXA3TUhfQlFFMW93OEJhak0yRjcybEh6RTQxWks1S05ndUtyVWlZNXpKX0IyaTdjOG1DTmxiT3NJR3dJQVk2OGwxeE53d1ZuZw?oc=5';
     const wrapperHtml = `
       <html>
         <head><title>Google News wrapper</title></head>
@@ -126,6 +126,35 @@ describe('extractArticle date inference', () => {
       {
         id: '3',
         title: 'Wrapper unresolved',
+        url: wrapperUrl,
+        sourceName: 'Google News',
+        publishedAt: null,
+        snippet: null,
+        providerData: null,
+      },
+      'googlenews',
+      { config: configStub, queryTokens: ['b2b', 'news'] },
+    );
+
+    expect(outcome.article).toBeNull();
+    expect(outcome.error).toBe(GOOGLE_NEWS_WRAPPER_SKIP_ERROR);
+  });
+
+  it('maps Cloudflare subrequest limit errors to wrapper skip marker', async () => {
+    const wrapperUrl =
+      'https://news.google.com/articles/CBMibEFVX3lxTE9vLWxRM0lHTWZRenhWcno4aE1uQUYwMXA3TUhfQlFFMW93OEJhak0yRjcybEh6RTQxWks1S05ndUtyVWlZNXpKX0IyaTdjOG1DTmxiT3NJR3dJQVk2OGwxeE53d1ZuZw?oc=5';
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('Too many subrequests');
+      }),
+    );
+
+    const outcome = await extractArticle(
+      {
+        id: '4',
+        title: 'Wrapper subrequest limit',
         url: wrapperUrl,
         sourceName: 'Google News',
         publishedAt: null,

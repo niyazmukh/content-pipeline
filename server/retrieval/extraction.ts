@@ -799,9 +799,17 @@ export const extractArticle = async (
 
     return outcome;
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (provider === 'googlenews' && /too many subrequests/i.test(message)) {
+      return {
+        article: null,
+        error: GOOGLE_NEWS_WRAPPER_SKIP_ERROR,
+        meta: { fetchMs: Date.now() - fetchStart, parseMs: 0 },
+      };
+    }
     return {
       article: null,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
       meta: { fetchMs: Date.now() - fetchStart, parseMs: 0 },
     };
   }

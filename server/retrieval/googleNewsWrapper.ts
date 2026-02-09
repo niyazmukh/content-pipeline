@@ -1,4 +1,15 @@
 const GOOGLE_NEWS_HOST = 'news.google.com';
+const WRAPPER_DECODE_CACHE_TTL_MS = 10 * 60 * 1000;
+const wrapperDecodeCache = new Map<string, { value: string | null; expiresAt: number }>();
+const MAX_WRAPPER_CACHE_ENTRIES = 2000;
+
+const setWrapperDecodeCache = (token: string, value: string | null, now: number) => {
+  wrapperDecodeCache.set(token, { value, expiresAt: now + WRAPPER_DECODE_CACHE_TTL_MS });
+  if (wrapperDecodeCache.size > MAX_WRAPPER_CACHE_ENTRIES) {
+    const oldestKey = wrapperDecodeCache.keys().next().value;
+    if (oldestKey) wrapperDecodeCache.delete(oldestKey);
+  }
+};
 
 const base64UrlDecodeBinary = (value: string): string | null => {
   try {
@@ -58,23 +69,28 @@ const fetchDecodingParams = async (
   rawUrl?: string,
   signal?: AbortSignal,
 ): Promise<{ signature: string; timestamp: string } | null> => {
-  const paths = new Set<string>();
+  // Keep this list intentionally short: every extra path attempt is an extra subrequest,
+  // and Workers have per-request subrequest limits.
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  const addPath = (path: string) => {
+    if (!path || seen.has(path)) return;
+    seen.add(path);
+    paths.push(path);
+  };
   // Prefer the exact incoming URL path/query first (can carry locale/edition parameters).
   if (rawUrl) {
     try {
       const u = new URL(rawUrl);
       if (u.hostname === GOOGLE_NEWS_HOST) {
-        paths.add(`${u.pathname}${u.search || ''}`);
+        addPath(`${u.pathname}${u.search || ''}`);
       }
     } catch {
       // ignore
     }
   }
-  paths.add(`/articles/${token}`);
-  paths.add(`/rss/articles/${token}`);
-  // Try explicit locale variants; some edge locations only expose attrs with these.
-  paths.add(`/articles/${token}?hl=en-US&gl=US&ceid=US:en`);
-  paths.add(`/rss/articles/${token}?hl=en-US&gl=US&ceid=US:en`);
+  // One deterministic fallback.
+  addPath(`/articles/${token}`);
   const extractFromHtml = (html: string): { signature: string; timestamp: string } | null => {
     const sig =
       (html.match(/data-n-a-sg=["']([^"']+)["']/i) || [])[1] ||
@@ -156,11 +172,24 @@ export const isGoogleNewsWrapperUrl = (rawUrl: string): boolean => {
 export const resolveGoogleNewsWrapperUrl = async (rawUrl: string, signal?: AbortSignal): Promise<string | null> => {
   const token = extractWrapperToken(rawUrl);
   if (!token) return rawUrl;
+  const now = Date.now();
+  const cached = wrapperDecodeCache.get(token);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
 
   const direct = decodeDirectTokenUrl(token);
-  if (direct) return direct;
+  if (direct) {
+    setWrapperDecodeCache(token, direct, now);
+    return direct;
+  }
 
   const params = await fetchDecodingParams(token, rawUrl, signal);
-  if (!params) return null;
-  return decodeViaBatchExecute(token, params, signal);
+  if (!params) {
+    setWrapperDecodeCache(token, null, now);
+    return null;
+  }
+  const decoded = await decodeViaBatchExecute(token, params, signal);
+  setWrapperDecodeCache(token, decoded ?? null, now);
+  return decoded;
 };

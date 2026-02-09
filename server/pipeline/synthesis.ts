@@ -89,9 +89,14 @@ const buildKeyDevelopmentsSection = (sourceCatalog: SourceRecord[], options: { m
   return ['Key developments', ...bullets].join('\n');
 };
 
+const isKeyDevelopmentsHeaderLine = (line: string): boolean => {
+  const normalized = line.trim().replace(/^[#>*`\-_\s]+/g, '');
+  return /^key developments\b/i.test(normalized);
+};
+
 const replaceOrAppendKeyDevelopments = (article: string, keyDevSection: string): string => {
   const lines = article.split(/\r?\n/);
-  const idx = lines.findIndex((line) => /^\s*key developments\b/i.test(line.trim()));
+  const idx = lines.findIndex((line) => isKeyDevelopmentsHeaderLine(line));
   if (idx < 0) {
     return `${article.trim()}\n\n${keyDevSection}\n`;
   }
@@ -365,7 +370,7 @@ export const synthesizeArticle = async ({
     }
 
     const keyDevLines = coerced.article.split(/\r?\n/);
-    const keyDevIndex = keyDevLines.findIndex((line) => /^\s*key developments\b/i.test(line.trim()));
+    const keyDevIndex = keyDevLines.findIndex((line) => isKeyDevelopmentsHeaderLine(line));
     if (keyDevIndex >= 0) {
       const isKeyDevBulletLine = (line: string): boolean => {
         const trimmed = line.trim();

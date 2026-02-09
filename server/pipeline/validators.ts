@@ -94,6 +94,11 @@ export interface ArticleBodyValidationResult {
   warnings: string[];
 }
 
+const isKeyDevelopmentsHeaderLine = (line: string): boolean => {
+  const normalized = line.trim().replace(/^[#>*`\-_\s]+/g, '');
+  return /^key developments\b/i.test(normalized);
+};
+
 export const validateArticleBody = (
   article: string,
   options: ArticleValidationOptions,
@@ -123,7 +128,7 @@ export const validateArticleBody = (
   }
 
   const lines = article.split(/\r?\n/);
-  const keyDevelopmentsLineIndex = lines.findIndex((line) => /^\s*key developments\b/i.test(line.trim()));
+  const keyDevelopmentsLineIndex = lines.findIndex((line) => isKeyDevelopmentsHeaderLine(line));
 
   const narrativeText = keyDevelopmentsLineIndex >= 0 ? lines.slice(0, keyDevelopmentsLineIndex).join('\n') : article;
 
