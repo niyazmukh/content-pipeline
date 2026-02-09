@@ -69,6 +69,11 @@ type ClusterArticlesResponse = {
   uniqueCount: number;
 };
 
+const isTooManySubrequestsError = (value: unknown): boolean => {
+  const text = String(value || '').toLowerCase();
+  return text.includes('too many subrequests');
+};
+
 const nowIso = () => new Date().toISOString();
 
 const emitStage = (args: {
@@ -137,21 +142,11 @@ const runPipelineToClusters = async ({ topic, recencyHours, onStageEvent }: RunA
     const acceptedArticles: any[] = [];
 
     // Keep each extraction request comfortably under Workers subrequest limits; scale by adding batches.
-    const batchSize = 8;
+    const batchSize = 6;
     const candidates = candidatesJson.candidates || [];
     const totalBatches = Math.max(1, Math.ceil(candidates.length / batchSize));
 
-    for (let i = 0; i < totalBatches; i += 1) {
-      const start = i * batchSize;
-      const batch = candidates.slice(start, start + batchSize);
-      emitStage({
-        runId,
-        stage: 'retrieval',
-        status: 'progress',
-        message: `Extracting ${Math.min(start + batch.length, candidates.length)}/${candidates.length} URLs (batch ${i + 1}/${totalBatches})`,
-        onStageEvent,
-      });
-
+    const postExtractBatch = async (batch: RetrievalCandidate[]): Promise<ExtractBatchResponse> => {
       const res = await fetch(`${API_BASE_URL}/extract-batch`, {
         method: 'POST',
         headers: {
@@ -171,30 +166,99 @@ const runPipelineToClusters = async ({ topic, recencyHours, onStageEvent }: RunA
         throw new Error(text || `Batch extraction failed (${res.status})`);
       }
 
-      const json = (await res.json()) as ExtractBatchResponse;
+      return (await res.json()) as ExtractBatchResponse;
+    };
+
+    const mergeProviderDeltas = (deltas: RetrievalProviderMetrics[] | undefined) => {
+      if (!Array.isArray(deltas)) return;
+      for (const delta of deltas) {
+        const prev = perProvider.get(delta.provider);
+        if (!prev) {
+          perProvider.set(delta.provider, delta);
+          continue;
+        }
+        prev.extractionAttempts += delta.extractionAttempts || 0;
+        prev.accepted += delta.accepted || 0;
+        prev.preFiltered += delta.preFiltered || 0;
+        prev.missingPublishedAt += delta.missingPublishedAt || 0;
+        prev.extractionErrors = [...(prev.extractionErrors || []), ...(delta.extractionErrors || [])];
+        if (delta.rejectionReasons) {
+          prev.rejectionReasons = prev.rejectionReasons ?? {};
+          for (const [k, v] of Object.entries(delta.rejectionReasons)) {
+            prev.rejectionReasons[k] = (prev.rejectionReasons[k] ?? 0) + (v ?? 0);
+          }
+        }
+      }
+    };
+
+    const retryTooManySubrequests = async (failed: RetrievalCandidate[], label: string): Promise<ExtractBatchResponse[]> => {
+      if (!failed.length) return [];
+      const retryBatchSize = 2;
+      const chunks = Math.ceil(failed.length / retryBatchSize);
+      const out: ExtractBatchResponse[] = [];
+      for (let i = 0; i < chunks; i += 1) {
+        const retryBatch = failed.slice(i * retryBatchSize, i * retryBatchSize + retryBatchSize);
+        emitStage({
+          runId,
+          stage: 'retrieval',
+          status: 'progress',
+          message: `Retrying ${label} (${i + 1}/${chunks})`,
+          onStageEvent,
+        });
+        out.push(await postExtractBatch(retryBatch));
+      }
+      return out;
+    };
+
+    for (let i = 0; i < totalBatches; i += 1) {
+      const start = i * batchSize;
+      const batch = candidates.slice(start, start + batchSize);
+      emitStage({
+        runId,
+        stage: 'retrieval',
+        status: 'progress',
+        message: `Extracting ${Math.min(start + batch.length, candidates.length)}/${candidates.length} URLs (batch ${i + 1}/${totalBatches})`,
+        onStageEvent,
+      });
+
+      let json: ExtractBatchResponse;
+      try {
+        json = await postExtractBatch(batch);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (batch.length > 1 && isTooManySubrequestsError(message)) {
+          const retries = await retryTooManySubrequests(batch, 'subrequest-limited extraction');
+          json = {
+            accepted: retries.flatMap((r) => r.accepted || []),
+            perProvider: retries.flatMap((r) => r.perProvider || []),
+            extractionErrors: retries.flatMap((r) => r.extractionErrors || []),
+          };
+        } else {
+          throw error;
+        }
+      }
       if (Array.isArray(json.accepted)) {
         acceptedArticles.push(...json.accepted);
       }
-      if (Array.isArray(json.extractionErrors)) {
-        allErrors.push(...json.extractionErrors);
-      }
-      if (Array.isArray(json.perProvider)) {
-        for (const delta of json.perProvider) {
-          const prev = perProvider.get(delta.provider);
-          if (!prev) {
-            perProvider.set(delta.provider, delta);
-            continue;
+      mergeProviderDeltas(json.perProvider);
+
+      const extractionErrors = Array.isArray(json.extractionErrors) ? json.extractionErrors : [];
+      const retryable = extractionErrors.filter(
+        (e) => e.provider === 'googlenews' && isTooManySubrequestsError(e.error),
+      );
+      const nonRetryable = extractionErrors.filter((e) => !retryable.includes(e));
+      allErrors.push(...nonRetryable);
+
+      if (retryable.length) {
+        const retryCandidates = batch.filter((candidate) => retryable.some((err) => err.url === candidate.url));
+        const retries = await retryTooManySubrequests(retryCandidates, 'Google News subrequest-limited URLs');
+        for (const retry of retries) {
+          if (Array.isArray(retry.accepted)) {
+            acceptedArticles.push(...retry.accepted);
           }
-          prev.extractionAttempts += delta.extractionAttempts || 0;
-          prev.accepted += delta.accepted || 0;
-          prev.preFiltered += delta.preFiltered || 0;
-          prev.missingPublishedAt += delta.missingPublishedAt || 0;
-          prev.extractionErrors = [...(prev.extractionErrors || []), ...(delta.extractionErrors || [])];
-          if (delta.rejectionReasons) {
-            prev.rejectionReasons = prev.rejectionReasons ?? {};
-            for (const [k, v] of Object.entries(delta.rejectionReasons)) {
-              prev.rejectionReasons[k] = (prev.rejectionReasons[k] ?? 0) + (v ?? 0);
-            }
+          mergeProviderDeltas(retry.perProvider);
+          if (Array.isArray(retry.extractionErrors)) {
+            allErrors.push(...retry.extractionErrors);
           }
         }
       }
