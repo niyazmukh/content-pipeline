@@ -542,14 +542,10 @@ export const extractArticle = async (
     let requestUrl = input.url;
     if (provider === 'googlenews' && isGoogleNewsWrapperUrl(requestUrl)) {
       const resolved = await resolveGoogleNewsWrapperUrl(requestUrl, options.signal);
-      if (!resolved || isGoogleNewsWrapperUrl(resolved)) {
-        return {
-          article: null,
-          error: 'Google News wrapper URL could not be resolved',
-          meta: { fetchMs: Date.now() - fetchStart, parseMs: 0 },
-        };
+      if (resolved && !isGoogleNewsWrapperUrl(resolved)) {
+        requestUrl = resolved;
       }
-      requestUrl = resolved;
+      // If unresolved, fall back to fetching the wrapper URL directly rather than hard-failing.
     }
 
     const response = await fetchWithTimeout(requestUrl, {

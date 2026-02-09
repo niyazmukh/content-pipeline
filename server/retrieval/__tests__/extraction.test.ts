@@ -97,4 +97,46 @@ describe('extractArticle date inference', () => {
     expect(outcome.article).not.toBeNull();
     expect(outcome.article?.canonicalUrl).toContain('digitalcommerce360.com');
   });
+
+  it('does not hard-fail when wrapper decode is unavailable', async () => {
+    const wrapperUrl =
+      'https://news.google.com/articles/CBMiZkFVX3lxTE9vLWxRM0lHTWZRenhWcno4aE1uQUYwMXA3TUhfQlFFMW93OEJhak0yRjcybEh6RTQxWks1S05ndUtyVWlZNXpKX0IyaTdjOG1DTmxiT3NJR3dJQVk2OGwxeE53d1ZuZw?oc=5';
+    const wrapperHtml = `
+      <html>
+        <head><title>Google News wrapper</title></head>
+        <body><main><p>Wrapper page content fallback.</p></main></body>
+      </html>
+    `;
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        // decode param attempts fail
+        .mockResolvedValue(new Response('not useful', { status: 200, headers: { 'content-type': 'text/html' } }))
+        // extraction fetch of wrapper succeeds
+        .mockResolvedValueOnce(new Response('not useful', { status: 200, headers: { 'content-type': 'text/html' } }))
+        .mockResolvedValueOnce(new Response('not useful', { status: 200, headers: { 'content-type': 'text/html' } }))
+        .mockResolvedValueOnce(new Response('not useful', { status: 200, headers: { 'content-type': 'text/html' } }))
+        .mockResolvedValueOnce(new Response('not useful', { status: 200, headers: { 'content-type': 'text/html' } }))
+        .mockResolvedValueOnce(new Response(wrapperHtml, { status: 200, headers: { 'content-type': 'text/html' } })),
+    );
+
+    const outcome = await extractArticle(
+      {
+        id: '3',
+        title: 'Wrapper unresolved',
+        url: wrapperUrl,
+        sourceName: 'Google News',
+        publishedAt: null,
+        snippet: null,
+        providerData: null,
+      },
+      'googlenews',
+      { config: configStub, queryTokens: ['b2b', 'news'] },
+    );
+
+    expect(outcome.error).toBeUndefined();
+    expect(outcome.article).not.toBeNull();
+    expect(outcome.article?.canonicalUrl).toContain('news.google.com/articles/');
+  });
 });

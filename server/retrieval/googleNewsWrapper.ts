@@ -55,9 +55,26 @@ const decodeDirectTokenUrl = (token: string): string | null => {
 
 const fetchDecodingParams = async (
   token: string,
+  rawUrl?: string,
   signal?: AbortSignal,
 ): Promise<{ signature: string; timestamp: string } | null> => {
-  const paths = [`/articles/${token}`, `/rss/articles/${token}`];
+  const paths = new Set<string>();
+  // Prefer the exact incoming URL path/query first (can carry locale/edition parameters).
+  if (rawUrl) {
+    try {
+      const u = new URL(rawUrl);
+      if (u.hostname === GOOGLE_NEWS_HOST) {
+        paths.add(`${u.pathname}${u.search || ''}`);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  paths.add(`/articles/${token}`);
+  paths.add(`/rss/articles/${token}`);
+  // Try explicit locale variants; some edge locations only expose attrs with these.
+  paths.add(`/articles/${token}?hl=en-US&gl=US&ceid=US:en`);
+  paths.add(`/rss/articles/${token}?hl=en-US&gl=US&ceid=US:en`);
   const extractFromHtml = (html: string): { signature: string; timestamp: string } | null => {
     const sig =
       (html.match(/data-n-a-sg=["']([^"']+)["']/i) || [])[1] ||
@@ -143,8 +160,7 @@ export const resolveGoogleNewsWrapperUrl = async (rawUrl: string, signal?: Abort
   const direct = decodeDirectTokenUrl(token);
   if (direct) return direct;
 
-  const params = await fetchDecodingParams(token, signal);
+  const params = await fetchDecodingParams(token, rawUrl, signal);
   if (!params) return null;
   return decodeViaBatchExecute(token, params, signal);
 };
-
