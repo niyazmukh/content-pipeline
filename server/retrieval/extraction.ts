@@ -4,6 +4,8 @@ import type { ConnectorArticle, NormalizedArticle, ProviderName } from './types'
 import { buildExcerpt } from '../utils/text';
 import { isGoogleNewsWrapperUrl, resolveGoogleNewsWrapperUrl } from './googleNewsWrapper';
 
+export const GOOGLE_NEWS_WRAPPER_SKIP_ERROR = 'google_news_wrapper_unresolved_or_rate_limited';
+
 export interface ExtractionOptions {
   config: AppConfig;
   queryTokens: string[];
@@ -540,12 +542,19 @@ export const extractArticle = async (
   const fetchStart = Date.now();
   try {
     let requestUrl = input.url;
+    const wrapperInput = provider === 'googlenews' && isGoogleNewsWrapperUrl(requestUrl);
     if (provider === 'googlenews' && isGoogleNewsWrapperUrl(requestUrl)) {
       const resolved = await resolveGoogleNewsWrapperUrl(requestUrl, options.signal);
       if (resolved && !isGoogleNewsWrapperUrl(resolved)) {
         requestUrl = resolved;
+      } else {
+        // Avoid hammering wrapper URLs directly from Workers (often 429 from Google News edge).
+        return {
+          article: null,
+          error: GOOGLE_NEWS_WRAPPER_SKIP_ERROR,
+          meta: { fetchMs: Date.now() - fetchStart, parseMs: 0 },
+        };
       }
-      // If unresolved, fall back to fetching the wrapper URL directly rather than hard-failing.
     }
 
     const response = await fetchWithTimeout(requestUrl, {
@@ -555,6 +564,13 @@ export const extractArticle = async (
     });
 
     if (!response.ok) {
+      if (wrapperInput && response.status === 429) {
+        return {
+          article: null,
+          error: GOOGLE_NEWS_WRAPPER_SKIP_ERROR,
+          meta: { fetchMs: Date.now() - fetchStart, parseMs: 0 },
+        };
+      }
       // If blocked or non-success, attempt provider fallback where available (e.g., EventRegistry body)
       if (provider === 'eventregistry' && input.providerData) {
         const bodyText =

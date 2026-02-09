@@ -5,6 +5,7 @@ import { fetchGoogleNewsRssCandidates } from './connectors/googleNewsRss';
 import { fetchNewsApiCandidates } from './connectors/newsapi';
 import { fetchEventRegistryCandidates } from './connectors/eventRegistry';
 import { extractArticle } from './extraction';
+import { GOOGLE_NEWS_WRAPPER_SKIP_ERROR } from './extraction';
 import { evaluateArticle } from './filters';
 import { deduplicateArticles } from './dedup';
 import { rankAndClusterArticles } from './ranking';
@@ -396,6 +397,13 @@ export const retrieveUnified = async (
             }
           } else if (outcome.error) {
             const msg = outcome.error;
+            if (candidate.provider === 'googlenews' && msg === GOOGLE_NEWS_WRAPPER_SKIP_ERROR) {
+              if (m) m.preFiltered++;
+              const bucket = rejectionReasons.get(candidate.provider) ?? {};
+              bucket.rss_wrapper_unresolved = (bucket.rss_wrapper_unresolved ?? 0) + 1;
+              rejectionReasons.set(candidate.provider, bucket);
+              continue;
+            }
             extractionErrors.push({ url: candidate.url, error: msg, provider: candidate.provider });
             if (m) m.extractionErrors.push({ url: candidate.url, error: msg });
           }

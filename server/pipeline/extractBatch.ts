@@ -2,6 +2,7 @@ import type { AppConfig } from '../../shared/config';
 import type { Logger } from '../obs/logger';
 import { Semaphore } from '../utils/concurrency';
 import { extractArticle } from '../retrieval/extraction';
+import { GOOGLE_NEWS_WRAPPER_SKIP_ERROR } from '../retrieval/extraction';
 import { evaluateArticle } from '../retrieval/filters';
 import { tokenizeForRelevance } from '../retrieval/queryUtils';
 import type { ProviderName, NormalizedArticle } from '../retrieval/types';
@@ -179,6 +180,14 @@ export const extractBatch = async ({
           }
         } else if (outcome.error) {
           const msg = outcome.error;
+          if (provider === 'googlenews' && msg === GOOGLE_NEWS_WRAPPER_SKIP_ERROR) {
+            if (bucket) {
+              bucket.preFiltered += 1;
+              bucket.rejectionReasons = bucket.rejectionReasons ?? {};
+              bucket.rejectionReasons.rss_wrapper_unresolved = (bucket.rejectionReasons.rss_wrapper_unresolved ?? 0) + 1;
+            }
+            continue;
+          }
           extractionErrors.push({ url: candidate.url, error: msg, provider });
           if (bucket) bucket.extractionErrors.push({ url: candidate.url, error: msg });
         }

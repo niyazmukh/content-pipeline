@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppConfig } from '../../../shared/config';
 import { extractArticle } from '../extraction';
+import { GOOGLE_NEWS_WRAPPER_SKIP_ERROR } from '../extraction';
 
 const configStub = {
   retrieval: {
@@ -98,7 +99,7 @@ describe('extractArticle date inference', () => {
     expect(outcome.article?.canonicalUrl).toContain('digitalcommerce360.com');
   });
 
-  it('does not hard-fail when wrapper decode is unavailable', async () => {
+  it('returns skip marker when wrapper decode is unavailable', async () => {
     const wrapperUrl =
       'https://news.google.com/articles/CBMiZkFVX3lxTE9vLWxRM0lHTWZRenhWcno4aE1uQUYwMXA3TUhfQlFFMW93OEJhak0yRjcybEh6RTQxWks1S05ndUtyVWlZNXpKX0IyaTdjOG1DTmxiT3NJR3dJQVk2OGwxeE53d1ZuZw?oc=5';
     const wrapperHtml = `
@@ -135,8 +136,7 @@ describe('extractArticle date inference', () => {
       { config: configStub, queryTokens: ['b2b', 'news'] },
     );
 
-    expect(outcome.error).toBeUndefined();
-    expect(outcome.article).not.toBeNull();
-    expect(outcome.article?.canonicalUrl).toContain('news.google.com/articles/');
+    expect(outcome.article).toBeNull();
+    expect(outcome.error).toBe(GOOGLE_NEWS_WRAPPER_SKIP_ERROR);
   });
 });
