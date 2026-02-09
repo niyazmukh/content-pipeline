@@ -180,7 +180,10 @@ export const extractBatch = async ({
           }
         } else if (outcome.error) {
           const msg = outcome.error;
-          if (provider === 'googlenews' && msg === GOOGLE_NEWS_WRAPPER_SKIP_ERROR) {
+          const isGoogleNewsSkip =
+            provider === 'googlenews' &&
+            (msg === GOOGLE_NEWS_WRAPPER_SKIP_ERROR || /too many subrequests/i.test(msg));
+          if (isGoogleNewsSkip) {
             if (bucket) {
               bucket.preFiltered += 1;
               bucket.rejectionReasons = bucket.rejectionReasons ?? {};

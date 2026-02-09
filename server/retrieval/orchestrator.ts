@@ -406,7 +406,10 @@ export const retrieveUnified = async (
             }
           } else if (outcome.error) {
             const msg = outcome.error;
-            if (candidate.provider === 'googlenews' && msg === GOOGLE_NEWS_WRAPPER_SKIP_ERROR) {
+            const isGoogleNewsSkip =
+              candidate.provider === 'googlenews' &&
+              (msg === GOOGLE_NEWS_WRAPPER_SKIP_ERROR || /too many subrequests/i.test(msg));
+            if (isGoogleNewsSkip) {
               if (m) m.preFiltered++;
               const bucket = rejectionReasons.get(candidate.provider) ?? {};
               bucket.rss_wrapper_unresolved = (bucket.rss_wrapper_unresolved ?? 0) + 1;
