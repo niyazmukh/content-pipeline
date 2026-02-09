@@ -186,3 +186,70 @@ export const deriveLooseTerms = (
   return results;
 };
 
+const looksExactPhrase = (term: string): boolean => {
+  // Keep quotes for likely proper nouns/acronyms, otherwise prefer broader matching.
+  if (/[A-Z]{2,}/.test(term)) return true;
+  if (/\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/.test(term)) return true;
+  return false;
+};
+
+export const normalizeGoogleLikeQuery = (input: string, options: { maxTerms?: number } = {}): string => {
+  const maxTerms = Math.max(2, Math.min(options.maxTerms ?? 6, 10));
+  const terms = deriveLooseTerms(input, { maxTerms, maxTokensPerTerm: 4 });
+  if (!terms.length) return String(input || '').trim();
+
+  const normalized = terms.map((term) => {
+    const clean = term.replace(/^"+|"+$/g, '').trim();
+    if (!clean) return '';
+    if (looksExactPhrase(clean) && /\s/.test(clean)) {
+      return `"${clean}"`;
+    }
+    return clean;
+  }).filter(Boolean);
+
+  if (!normalized.length) return String(input || '').trim();
+  if (normalized.length === 1) return normalized[0];
+  return normalized.join(' OR ');
+};
+
+export const normalizeNewsApiQuery = (input: string, options: { maxTerms?: number } = {}): string => {
+  const maxTerms = Math.max(2, Math.min(options.maxTerms ?? 6, 10));
+  const terms = deriveLooseTerms(input, { maxTerms, maxTokensPerTerm: 5 });
+  if (!terms.length) return String(input || '').trim();
+
+  const normalized = terms
+    .map((term) => term.replace(/^"+|"+$/g, '').trim())
+    .filter(Boolean)
+    .map((term) => (/\s/.test(term) ? `"${term}"` : term));
+
+  if (!normalized.length) return String(input || '').trim();
+  if (normalized.length === 1) return normalized[0];
+  return normalized.join(' OR ');
+};
+
+export const normalizeEventRegistryKeywords = (input: string | string[], options: { maxTerms?: number } = {}): string[] => {
+  const maxTerms = Math.max(3, Math.min(options.maxTerms ?? 8, 15));
+  const raw = Array.isArray(input) ? input : [input];
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const segment of raw) {
+    const terms = deriveLooseTerms(String(segment || ''), { maxTerms, maxTokensPerTerm: 4 });
+    for (const term of terms) {
+      const clean = term.replace(/^"+|"+$/g, '').trim();
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(clean);
+      if (out.length >= maxTerms) {
+        return out;
+      }
+    }
+  }
+
+  if (out.length) return out;
+  const fallback = raw.map((value) => String(value || '').trim()).filter(Boolean);
+  return fallback.slice(0, maxTerms);
+};
+

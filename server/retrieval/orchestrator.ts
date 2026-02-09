@@ -10,7 +10,12 @@ import { evaluateArticle } from './filters';
 import { deduplicateArticles } from './dedup';
 import { rankAndClusterArticles } from './ranking';
 import { Semaphore } from '../utils/concurrency';
-import { tokenizeForRelevance } from './queryUtils';
+import {
+  tokenizeForRelevance,
+  normalizeGoogleLikeQuery,
+  normalizeNewsApiQuery,
+  normalizeEventRegistryKeywords,
+} from './queryUtils';
 import type { ArtifactStore } from '../../shared/artifacts';
 import type {
   ProviderName,
@@ -101,10 +106,14 @@ export const retrieveUnified = async (
           query.newsapi ||
           (query.eventregistry && query.eventregistry.length ? query.eventregistry.join(' ') : 'multi-provider-query'));
 
-  const googleQuery = typeof query === 'string' ? query : (query.google || mainQueryString);
-  const newsApiQuery = typeof query === 'string' ? query : (query.newsapi || mainQueryString);
-  const eventRegistryQuery =
+  const rawGoogleQuery = typeof query === 'string' ? query : (query.google || mainQueryString);
+  const rawNewsApiQuery = typeof query === 'string' ? query : (query.newsapi || mainQueryString);
+  const rawEventRegistryQuery =
     typeof query === 'string' ? [query] : (query.eventregistry && query.eventregistry.length ? query.eventregistry : [mainQueryString]);
+
+  const googleQuery = normalizeGoogleLikeQuery(rawGoogleQuery);
+  const newsApiQuery = normalizeNewsApiQuery(rawNewsApiQuery);
+  const eventRegistryQuery = normalizeEventRegistryKeywords(rawEventRegistryQuery);
   const queryTokens = tokenizeForRelevance(mainQueryString, { maxTokens: 24 });
 
   const filterOptions = {

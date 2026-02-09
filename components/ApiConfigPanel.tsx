@@ -12,12 +12,30 @@ interface ApiConfigPanelProps {
 }
 
 const ApiConfigPanel: React.FC<ApiConfigPanelProps> = ({ apiKeys, setApiKeys, hasUserKeys, onClearKeys }) => {
+  const [isExpanded, setIsExpanded] = React.useState<boolean>(hasUserKeys);
+
+  React.useEffect(() => {
+    if (hasUserKeys) {
+      setIsExpanded(true);
+    }
+  }, [hasUserKeys]);
+
   return (
     <Card 
         title="API keys" 
         description="Optional: add your own keys to avoid shared backend quotas."
         className="bg-slate-900/60 border-slate-800"
         action={
+          <div className="flex items-center gap-2">
+            <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsExpanded((prev) => !prev)}
+                aria-expanded={isExpanded}
+            >
+                {isExpanded ? 'Hide keys' : 'Show keys'}
+            </Button>
             <Button
                 type="button"
                 variant="outline"
@@ -28,11 +46,19 @@ const ApiConfigPanel: React.FC<ApiConfigPanelProps> = ({ apiKeys, setApiKeys, ha
                     onClearKeys();
                 }}
                 title="Clears locally stored keys (browser localStorage)."
+                disabled={!hasUserKeys}
             >
                 Clear keys
             </Button>
+          </div>
         }
     >
+      {!isExpanded ? (
+        <div className="text-xs text-slate-400">
+          API key fields are hidden. Expand to manage your personal keys.
+        </div>
+      ) : (
+        <>
       <div className="mb-4 text-xs text-slate-400 flex items-center gap-2">
         <span>{hasUserKeys ? 'Using your personal API keys.' : 'Using the default backend configuration (if available).'}</span>
         <HelpTip label="Keys are saved in your browser and included as request headers when you run the pipeline. Shared backend keys can run out of quota if many users run the app." />
@@ -154,6 +180,8 @@ const ApiConfigPanel: React.FC<ApiConfigPanelProps> = ({ apiKeys, setApiKeys, ha
            </div>
         </details>
       </div>
+        </>
+      )}
     </Card>
   );
 };

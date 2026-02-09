@@ -96,6 +96,16 @@ export const applyPreFilter = (
     return { pass: false, reason: 'empty_url' };
   }
 
+  let isGoogleNewsRssWrapper = false;
+  try {
+    const parsed = new URL(url);
+    isGoogleNewsRssWrapper =
+      parsed.hostname === 'news.google.com' &&
+      /\/rss\/articles\//i.test(parsed.pathname);
+  } catch {
+    // ignore parse errors; fall back to generic checks
+  }
+
   // Check banned path patterns
   for (const pattern of BANNED_PATH_PATTERNS) {
     if (pattern.test(url)) {
@@ -105,6 +115,9 @@ export const applyPreFilter = (
 
   // Check banned fragments
   for (const fragment of BANNED_FRAGMENTS) {
+    if (isGoogleNewsRssWrapper && fragment === '/rss') {
+      continue;
+    }
     if (url.includes(fragment)) {
       return { pass: false, reason: 'banned_fragment' };
     }

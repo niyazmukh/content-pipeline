@@ -67,12 +67,8 @@ export const fetchGoogleNewsRssCandidates = async (
 
   const maxResults = Math.min(Math.max(options.maxResults ?? config.connectors.googleNewsRss.maxResults ?? 40, 1), 100);
   const recencyHours = options.recencyHours ?? config.recencyHours;
-  const recencyDays = Math.max(1, Math.min(31, Math.ceil(recencyHours / 24)));
-
-  // Google News RSS supports the same "when:Xd" operator in the query string.
-  // If user already included a recency operator, don't duplicate it.
-  const hasWhen = /\bwhen:\d+[hdwmy]\b/i.test(query);
-  const effectiveQuery = hasWhen ? query : `${query} when:${recencyDays}d`;
+  const recencyCutoffMs = Date.now() - recencyHours * 60 * 60 * 1000;
+  const effectiveQuery = query;
 
   const params = new URLSearchParams({
     q: effectiveQuery,
@@ -120,14 +116,21 @@ export const fetchGoogleNewsRssCandidates = async (
 
     const url = decodeXmlEntities((linkRaw || '').trim());
     if (!url) continue;
-    const canonicalUrl = url.replace(`https://${GOOGLE_NEWS_HOST}/rss/articles/`, `https://${GOOGLE_NEWS_HOST}/articles/`);
-
-    const title = stripTags(decodeXmlEntities(titleRaw || canonicalUrl)) || canonicalUrl;
+    const title = stripTags(decodeXmlEntities(titleRaw || url)) || url;
     const snippet = descRaw ? stripTags(decodeXmlEntities(descRaw)) : null;
     const publishedAt = parsePubDateToIso(pubDateRaw);
+
+    // Enforce recency from RSS metadata instead of relying on undocumented query operators.
+    if (publishedAt) {
+      const publishedMs = Date.parse(publishedAt);
+      if (!Number.isNaN(publishedMs) && publishedMs < recencyCutoffMs) {
+        continue;
+      }
+    }
+
     parsedItems.push({
       title,
-      url: canonicalUrl,
+      url,
       sourceName: source.name,
       sourceUrl: source.url,
       publishedAt,

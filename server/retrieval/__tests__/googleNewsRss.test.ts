@@ -41,7 +41,7 @@ describe('fetchGoogleNewsRssCandidates', () => {
 
     const result = await fetchGoogleNewsRssCandidates('b2b ecommerce news', configStub);
     expect(result.items.length).toBe(1);
-    expect(result.items[0].url).toContain('https://news.google.com/articles/');
+    expect(result.items[0].url).toContain('https://news.google.com/rss/articles/');
     expect((result.metrics as any).wrapperCandidates).toBe(1);
   });
 });
