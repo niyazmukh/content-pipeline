@@ -1,5 +1,7 @@
 import React from 'react';
 import type { RetrievalMetrics, RetrievalProviderMetrics } from '../shared/types';
+import { Card } from './ui/Card';
+import { Badge } from './ui/Badge';
 
 interface RetrievalMetricsPanelProps {
   metrics: RetrievalMetrics | null;
@@ -28,6 +30,13 @@ const computeUnique = (provider: RetrievalProviderMetrics): number =>
 
 const computeSkipped = (provider: RetrievalProviderMetrics): number =>
   provider.skipped ?? Math.max(0, computeUnique(provider) - (provider.queued ?? provider.extractionAttempts));
+
+const StatBox: React.FC<{ label: string; value: number }> = ({ label, value }) => (
+    <div className="flex flex-col items-center justify-center p-3 rounded bg-slate-800/50 border border-slate-700/50">
+        <div className="text-2xl font-bold text-slate-100">{value}</div>
+        <div className="text-xs uppercase tracking-wider text-slate-400 font-medium">{label}</div>
+    </div>
+);
 
 const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }) => {
   if (!metrics) {
@@ -64,148 +73,110 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
   const displayedAccepted = totalAccepted || metrics.accepted;
 
   return (
-    <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-200">Retrieval metrics</h2>
-          <p className="text-sm text-slate-400">
-            Candidates {metrics.candidateCount} | Accepted {metrics.accepted} | Duplicates removed {metrics.duplicatesRemoved}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            Returned counts include duplicates and overlap across providers. Extraction operates on unique URLs after URL de-dupe (see
-            "Unique"). Skipped should normally be 0.
-          </p>
+    <Card 
+        title="Retrieval Metrics" 
+        className="border-slate-800 bg-slate-900/40"
+        footer={
+             <div className="flex flex-col sm:flex-row justify-between text-xs text-slate-500 gap-2">
+                <div className="space-x-4">
+                  <span>Candidates: {metrics.candidateCount}</span>
+                  <span>Accepted: {metrics.accepted}</span>
+                  <span>Dupes Removed: {metrics.duplicatesRemoved}</span>
+                </div>
+                 <div className="flex gap-4">
+                    <span>Newest: {metrics.newestArticleHours != null ? `${metrics.newestArticleHours}h ago` : 'n/a'}</span>
+                    <span>Oldest: {metrics.oldestArticleHours != null ? `${metrics.oldestArticleHours}h ago` : 'n/a'}</span>
+                </div>
+            </div>
+        }
+    >
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+            <StatBox label="Total Returned" value={displayedReturned} />
+            <StatBox label="Extraction Attempts" value={displayedAttempts} />
+            <StatBox label="Accepted" value={displayedAccepted} />
         </div>
-        <div className="text-xs text-slate-400 text-right leading-tight">
-          <p>Newest article age: {metrics.newestArticleHours != null ? `${metrics.newestArticleHours}h` : 'n/a'}</p>
-          <p>Oldest article age: {metrics.oldestArticleHours != null ? `${metrics.oldestArticleHours}h` : 'n/a'}</p>
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-3 mb-4 text-xs text-slate-300">
-        <div className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-950/50">
-          <p className="font-semibold text-slate-200 uppercase tracking-wide">Total returned</p>
-          <p className="text-lg font-bold text-slate-100">{displayedReturned}</p>
-        </div>
-        <div className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-950/50">
-          <p className="font-semibold text-slate-200 uppercase tracking-wide">Extraction attempts</p>
-          <p className="text-lg font-bold text-slate-100">{displayedAttempts}</p>
-        </div>
-        <div className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-950/50">
-          <p className="font-semibold text-slate-200 uppercase tracking-wide">Accepted</p>
-          <p className="text-lg font-bold text-slate-100">{displayedAccepted}</p>
-        </div>
-      </div>
-      <div className="overflow-x-auto">
+
+      <div className="overflow-x-auto -mx-6 px-6 pb-2">
         <table className="min-w-full text-sm text-left text-slate-300">
-          <thead className="text-xs uppercase tracking-wide text-slate-400">
+          <thead className="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-800">
             <tr>
-              <th className="px-3 py-2 font-medium">Provider</th>
-              <th className="px-3 py-2 font-medium text-right" title="How many candidates the connector returned.">
-                Returned
-              </th>
-              <th
-                className="px-3 py-2 font-medium text-right"
-                title="Unique URLs after URL de-duplication across providers. (Returned can be higher due to duplicates.)"
-              >
-                Unique
-              </th>
-              <th className="px-3 py-2 font-medium text-right" title="Unique URLs skipped due to extraction budget/time limits (not opened).">
-                Skipped
-              </th>
-              <th className="px-3 py-2 font-medium text-right" title="Rejected after extraction (low quality, off-topic, too promotional).">
-                Rejected
-              </th>
-              <th className="px-3 py-2 font-medium text-right" title="How many candidate URLs were actually opened and processed.">
-                Extraction attempts
-              </th>
-              <th className="px-3 py-2 font-medium text-right" title="How many extracted articles passed filters and were accepted.">
-                Accepted
-              </th>
-              <th className="px-3 py-2 font-medium text-right" title="Accepted/reviewed articles with missing or unknown publish date.">
-                Missing dates
-              </th>
-              <th className="px-3 py-2 font-medium text-right" title="Extraction failures (blocked pages, timeouts, parse errors).">
-                Errors
-              </th>
+              <th className="px-3 py-3 font-medium">Provider</th>
+              <th className="px-3 py-3 font-medium text-right">Returned</th>
+              <th className="px-3 py-3 font-medium text-right">Unique</th>
+              <th className="px-3 py-3 font-medium text-right">Skipped</th>
+              <th className="px-3 py-3 font-medium text-right">Rejected</th>
+              <th className="px-3 py-3 font-medium text-right">Attempts</th>
+              <th className="px-3 py-3 font-medium text-right">Accepted</th>
+              <th className="px-3 py-3 font-medium text-right">No Date</th>
+              <th className="px-3 py-3 font-medium text-right">Errors</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-800/50">
             {perProvider.map((provider) => {
               const providerErrorCount = Array.isArray(provider.extractionErrors) ? provider.extractionErrors.length : 0;
               const rejectionSummary = formatReasonCounts(provider.rejectionReasons);
               const unique = computeUnique(provider);
               const skipped = computeSkipped(provider);
               return (
-                <tr key={provider.provider} className="border-t border-slate-800">
-                  <th scope="row" className="px-3 py-2 font-semibold text-slate-200">
+                <tr key={provider.provider} className="group hover:bg-slate-800/30 transition-colors">
+                  <td className="px-3 py-3">
                     <div className="flex items-center gap-2">
-                      <span>{providerLabels[provider.provider]}</span>
+                      <span className="font-medium text-slate-200">{providerLabels[provider.provider]}</span>
                       {provider.disabled && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-700 bg-slate-950/60 text-slate-400 uppercase tracking-wide">
-                          disabled
-                        </span>
+                        <Badge variant="outline">Disabled</Badge>
                       )}
                       {provider.failed && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-red-900/60 bg-red-950/40 text-red-300 uppercase tracking-wide">
-                          failed
-                        </span>
+                        <Badge variant="error">Failed</Badge>
                       )}
                     </div>
                     {provider.query && (
-                      <div className="mt-1 text-xs text-slate-500 font-normal truncate max-w-[28rem]" title={provider.query}>
+                      <div className="mt-1 text-xs text-slate-500 font-mono truncate max-w-[20rem]" title={provider.query}>
                         {provider.query}
                       </div>
                     )}
                     {rejectionSummary && (
-                      <div className="mt-1 text-xs text-slate-500 font-normal truncate max-w-[28rem]" title={rejectionSummary}>
+                      <div className="mt-1 text-xs text-orange-400/70 truncate max-w-[20rem]" title={rejectionSummary}>
                         Rejected: {rejectionSummary}
                       </div>
                     )}
                     {provider.error && (
-                      <div className="mt-1 text-xs text-red-300 font-normal truncate max-w-[28rem]" title={provider.error}>
+                      <div className="mt-1 text-xs text-red-400 truncate max-w-[20rem]" title={provider.error}>
                         {provider.error}
                       </div>
                     )}
-                  </th>
-                  <td className="px-3 py-2 text-right">{provider.returned}</td>
-                  <td
-                    className="px-3 py-2 text-right"
-                    title={
-                      provider.deduped != null || provider.unique != null
-                        ? `Deduped: ${provider.deduped ?? 0}; Unique: ${provider.unique ?? unique}`
-                        : undefined
-                    }
-                  >
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono text-slate-400">{provider.returned}</td>
+                  <td className="px-3 py-3 text-right font-mono text-slate-400" title={`Deduped: ${provider.deduped ?? 0}`}>
                     {unique}
                   </td>
-                  <td className="px-3 py-2 text-right" title={provider.unique != null ? `Unique after de-dupe: ${provider.unique}` : undefined}>
-                    {skipped}
-                  </td>
-                  <td className="px-3 py-2 text-right">{provider.preFiltered}</td>
-                  <td className="px-3 py-2 text-right">{provider.extractionAttempts}</td>
-                  <td className="px-3 py-2 text-right">{provider.accepted}</td>
-                  <td className="px-3 py-2 text-right">{provider.missingPublishedAt}</td>
-                  <td className="px-3 py-2 text-right">{providerErrorCount}</td>
+                  <td className="px-3 py-3 text-right font-mono text-slate-400">{skipped}</td>
+                  <td className="px-3 py-3 text-right font-mono text-slate-400">{provider.preFiltered}</td>
+                  <td className="px-3 py-3 text-right font-mono text-slate-400">{provider.extractionAttempts}</td>
+                  <td className="px-3 py-3 text-right font-mono text-emerald-400 font-bold">{provider.accepted}</td>
+                  <td className="px-3 py-3 text-right font-mono text-slate-500">{provider.missingPublishedAt}</td>
+                  <td className="px-3 py-3 text-right font-mono text-slate-500">{providerErrorCount}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      
       {hasErrors && (
-        <div className="mt-4 text-xs text-red-300">
-          <p className="font-semibold mb-1">Extraction errors</p>
-          <ul className="space-y-1">
+        <div className="mt-6 p-4 rounded bg-red-950/20 border border-red-900/30">
+          <p className="font-medium text-red-200 text-sm mb-2">Extraction Errors</p>
+          <ul className="space-y-1 text-xs font-mono">
             {extractionErrors.slice(0, 5).map((error, index) => (
-              <li key={`${error.provider}-${index}`}>
-                <span className="uppercase text-slate-400">{error.provider}</span>: {error.error} ({error.url})
+              <li key={`${error.provider}-${index}`} className="text-red-300/80 break-all">
+                <span className="uppercase text-red-400 font-bold mr-2">{error.provider}</span>
+                {error.error} <span className="text-slate-500">({error.url})</span>
               </li>
             ))}
-            {extractionErrors.length > 5 && <li className="text-slate-400">+{extractionErrors.length - 5} more</li>}
+            {extractionErrors.length > 5 && <li className="text-slate-500 italic">+{extractionErrors.length - 5} more</li>}
           </ul>
         </div>
       )}
-    </section>
+    </Card>
   );
 };
 
