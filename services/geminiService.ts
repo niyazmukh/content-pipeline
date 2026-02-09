@@ -136,8 +136,8 @@ const runPipelineToClusters = async ({ topic, recencyHours, onStageEvent }: RunA
     const allErrors: Array<{ url: string; error: string; provider: RetrievalProviderMetrics['provider'] }> = [];
     const acceptedArticles: any[] = [];
 
-    // Keep batch size low enough to stay under Workers subrequest limits (Free: 50 per request).
-    const batchSize = 12;
+    // Keep each extraction request comfortably under Workers subrequest limits; scale by adding batches.
+    const batchSize = 8;
     const candidates = candidatesJson.candidates || [];
     const totalBatches = Math.max(1, Math.ceil(candidates.length / batchSize));
 

@@ -54,5 +54,47 @@ describe('extractArticle date inference', () => {
     expect(outcome.article).not.toBeNull();
     expect(outcome.article?.publishedAt).toContain('2026-01-20');
   });
-});
 
+  it('resolves Google News wrapper URL before extraction', async () => {
+    const wrapperUrl =
+      'https://news.google.com/articles/CBMiZkFVX3lxTE9vLWxRM0lHTWZRenhWcno4aE1uQUYwMXA3TUhfQlFFMW93OEJhak0yRjcybEh6RTQxWks1S05ndUtyVWlZNXpKX0IyaTdjOG1DTmxiT3NJR3dJQVk2OGwxeE53d1ZuZw?oc=5';
+    const decodePageHtml = `<html><body><c-wiz><div jscontroller="x" data-n-a-sg="sig123" data-n-a-ts="1770550734"></div></c-wiz></body></html>`;
+    const batchText =
+      `)]}'\n\n` +
+      `[["wrb.fr","Fbv4je","[\\"garturlres\\",\\"https://www.digitalcommerce360.com/topic/b2b-ecommerce/\\",1]",null,null,null,""]]`;
+    const articleHtml = `
+      <html>
+        <head>
+          <title>B2B RSS Story</title>
+          <link rel="canonical" href="https://www.digitalcommerce360.com/topic/b2b-ecommerce/" />
+        </head>
+        <body><main><p>Published on 2026-02-01. Market update.</p></main></body>
+      </html>
+    `;
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(decodePageHtml, { status: 200, headers: { 'content-type': 'text/html' } }))
+        .mockResolvedValueOnce(new Response(batchText, { status: 200, headers: { 'content-type': 'text/plain' } }))
+        .mockResolvedValueOnce(new Response(articleHtml, { status: 200, headers: { 'content-type': 'text/html' } })),
+    );
+
+    const outcome = await extractArticle(
+      {
+        id: '2',
+        title: 'Wrapper story',
+        url: wrapperUrl,
+        sourceName: 'Google News',
+        publishedAt: null,
+        snippet: 'snippet',
+        providerData: null,
+      },
+      'googlenews',
+      { config: configStub, queryTokens: ['b2b', 'news'] },
+    );
+
+    expect(outcome.article).not.toBeNull();
+    expect(outcome.article?.canonicalUrl).toContain('digitalcommerce360.com');
+  });
+});

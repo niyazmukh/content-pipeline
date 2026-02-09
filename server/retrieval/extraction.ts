@@ -2,6 +2,7 @@ import type { AppConfig } from '../../shared/config';
 import { hashString } from '../../shared/crypto';
 import type { ConnectorArticle, NormalizedArticle, ProviderName } from './types';
 import { buildExcerpt } from '../utils/text';
+import { isGoogleNewsWrapperUrl, resolveGoogleNewsWrapperUrl } from './googleNewsWrapper';
 
 export interface ExtractionOptions {
   config: AppConfig;
@@ -538,7 +539,20 @@ export const extractArticle = async (
 
   const fetchStart = Date.now();
   try {
-    const response = await fetchWithTimeout(input.url, {
+    let requestUrl = input.url;
+    if (provider === 'googlenews' && isGoogleNewsWrapperUrl(requestUrl)) {
+      const resolved = await resolveGoogleNewsWrapperUrl(requestUrl, options.signal);
+      if (!resolved || isGoogleNewsWrapperUrl(resolved)) {
+        return {
+          article: null,
+          error: 'Google News wrapper URL could not be resolved',
+          meta: { fetchMs: Date.now() - fetchStart, parseMs: 0 },
+        };
+      }
+      requestUrl = resolved;
+    }
+
+    const response = await fetchWithTimeout(requestUrl, {
       timeoutMs: options.config.retrieval.fetchTimeoutMs,
       userAgent: options.config.retrieval.userAgent,
       signal: options.signal,
@@ -553,7 +567,7 @@ export const extractArticle = async (
           (input.providerData as any).content ||
           null;
         if (typeof bodyText === 'string' && bodyText.trim().length > 200) {
-          const canonicalUrl = canonicalizeUrl(input.url);
+          const canonicalUrl = canonicalizeUrl(requestUrl);
           let host: string;
           try {
             host = new URL(canonicalUrl).hostname;
@@ -613,7 +627,7 @@ export const extractArticle = async (
           (input.providerData as any).content ||
           null;
         if (typeof bodyText === 'string' && bodyText.trim().length > 200) {
-          const canonicalUrl = canonicalizeUrl(input.url);
+          const canonicalUrl = canonicalizeUrl(requestUrl);
           let host: string;
           try {
             host = new URL(canonicalUrl).hostname;
