@@ -51,15 +51,20 @@ const parsePubDateToIso = (pubDate: string | null): string | null => {
 
 
 export const fetchGoogleNewsRssCandidates = async (
-  query: string,
+  query: string | string[],
   config: AppConfig,
   options: GoogleNewsRssConnectorOptions = {},
 ): Promise<ConnectorResult> => {
+  const queryVariants = (Array.isArray(query) ? query : [query])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  const fallbackQuery = queryVariants[0] || '';
+
   if (!config.connectors.googleNewsRss.enabled) {
     return {
       provider: 'googlenews',
       fetchedAt: new Date().toISOString(),
-      query,
+      query: fallbackQuery,
       items: [],
       metrics: { disabled: true },
     };
@@ -68,31 +73,40 @@ export const fetchGoogleNewsRssCandidates = async (
   const maxResults = Math.min(Math.max(options.maxResults ?? config.connectors.googleNewsRss.maxResults ?? 40, 1), 100);
   const recencyHours = options.recencyHours ?? config.recencyHours;
   const recencyCutoffMs = Date.now() - recencyHours * 60 * 60 * 1000;
-  const effectiveQuery = query;
+  const variantMetrics: Array<{
+    query: string;
+    rawReturned: number;
+    afterRecency: number;
+    afterPreFilter: number;
+    used: boolean;
+  }> = [];
 
-  const params = new URLSearchParams({
-    q: effectiveQuery,
-    hl: config.connectors.googleNewsRss.hl,
-    gl: config.connectors.googleNewsRss.gl,
-    ceid: config.connectors.googleNewsRss.ceid,
-  });
+  let lastResult: ConnectorResult | null = null;
 
-  const response = await fetch(`${GOOGLE_NEWS_RSS_ENDPOINT}?${params.toString()}`, {
-    method: 'GET',
-    signal: options.signal,
-    headers: {
-      Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1',
-    },
-  });
+  for (const effectiveQuery of queryVariants.length ? queryVariants : [fallbackQuery]) {
+    const params = new URLSearchParams({
+      q: effectiveQuery,
+      hl: config.connectors.googleNewsRss.hl,
+      gl: config.connectors.googleNewsRss.gl,
+      ceid: config.connectors.googleNewsRss.ceid,
+    });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`Google News RSS request failed: ${response.status} ${response.statusText} ${text}`);
-  }
+    const response = await fetch(`${GOOGLE_NEWS_RSS_ENDPOINT}?${params.toString()}`, {
+      method: 'GET',
+      signal: options.signal,
+      headers: {
+        Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1',
+      },
+    });
 
-  const xml = await response.text();
-  const parts = xml.split(/<item\b[^>]*>/i);
-  const parsedItems: Array<{
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Google News RSS request failed: ${response.status} ${response.statusText} ${text}`);
+    }
+
+    const xml = await response.text();
+    const parts = xml.split(/<item\b[^>]*>/i);
+    const parsedItems: Array<{
     title: string;
     url: string;
     sourceName: string | null;
@@ -102,81 +116,112 @@ export const fetchGoogleNewsRssCandidates = async (
     pubDateRaw: string | null;
   }> = [];
 
-  for (let i = 1; i < parts.length; i += 1) {
-    const chunk = parts[i];
-    const end = chunk.search(/<\/item>/i);
-    if (end < 0) continue;
-    const itemXml = chunk.slice(0, end);
+    for (let i = 1; i < parts.length; i += 1) {
+      const chunk = parts[i];
+      const end = chunk.search(/<\/item>/i);
+      if (end < 0) continue;
+      const itemXml = chunk.slice(0, end);
 
-    const titleRaw = extractTag(itemXml, 'title');
-    const linkRaw = extractTag(itemXml, 'link');
-    const pubDateRaw = extractTag(itemXml, 'pubDate');
-    const descRaw = extractTag(itemXml, 'description');
-    const source = extractSource(itemXml);
+      const titleRaw = extractTag(itemXml, 'title');
+      const linkRaw = extractTag(itemXml, 'link');
+      const pubDateRaw = extractTag(itemXml, 'pubDate');
+      const descRaw = extractTag(itemXml, 'description');
+      const source = extractSource(itemXml);
 
-    const url = decodeXmlEntities((linkRaw || '').trim());
-    if (!url) continue;
-    const title = stripTags(decodeXmlEntities(titleRaw || url)) || url;
-    const snippet = descRaw ? stripTags(decodeXmlEntities(descRaw)) : null;
-    const publishedAt = parsePubDateToIso(pubDateRaw);
+      const url = decodeXmlEntities((linkRaw || '').trim());
+      if (!url) continue;
+      const title = stripTags(decodeXmlEntities(titleRaw || url)) || url;
+      const snippet = descRaw ? stripTags(decodeXmlEntities(descRaw)) : null;
+      const publishedAt = parsePubDateToIso(pubDateRaw);
 
-    // Enforce recency from RSS metadata instead of relying on undocumented query operators.
-    if (publishedAt) {
-      const publishedMs = Date.parse(publishedAt);
-      if (!Number.isNaN(publishedMs) && publishedMs < recencyCutoffMs) {
+      // Enforce recency from RSS metadata instead of relying on undocumented query operators.
+      if (publishedAt) {
+        const publishedMs = Date.parse(publishedAt);
+        if (!Number.isNaN(publishedMs) && publishedMs < recencyCutoffMs) {
+          continue;
+        }
+      }
+
+      parsedItems.push({
+        title,
+        url,
+        sourceName: source.name,
+        sourceUrl: source.url,
+        publishedAt,
+        snippet,
+        pubDateRaw,
+      });
+    }
+
+    const items: ConnectorArticle[] = [];
+    let wrapperCandidates = 0;
+    for (let i = 0; i < parsedItems.length; i += 1) {
+      const item = parsedItems[i];
+      const finalUrl = item.url;
+      if (isGoogleNewsWrapperUrl(finalUrl)) wrapperCandidates += 1;
+
+      const decision = applyPreFilter(finalUrl, item.title, item.snippet, effectiveQuery);
+      if (!decision.pass) {
         continue;
       }
-    }
 
-    parsedItems.push({
-      title,
-      url,
-      sourceName: source.name,
-      sourceUrl: source.url,
-      publishedAt,
-      snippet,
-      pubDateRaw,
-    });
-  }
-
-  const items: ConnectorArticle[] = [];
-  let wrapperCandidates = 0;
-  for (let i = 0; i < parsedItems.length; i += 1) {
-    const item = parsedItems[i];
-    const finalUrl = item.url;
-    if (isGoogleNewsWrapperUrl(finalUrl)) wrapperCandidates += 1;
-
-    const decision = applyPreFilter(finalUrl, item.title, item.snippet, query);
-    if (!decision.pass) {
-      continue;
-    }
-
-    items.push({
-      id: buildArticleId(finalUrl),
-      title: item.title,
-      url: finalUrl,
-      sourceName: item.sourceName,
-      publishedAt: item.publishedAt,
-      snippet: item.snippet,
-      providerData: {
+      items.push({
+        id: buildArticleId(finalUrl),
+        title: item.title,
+        url: finalUrl,
         sourceName: item.sourceName,
-        sourceUrl: item.sourceUrl,
-        pubDate: item.pubDateRaw,
-        rssUrl: item.url,
+        publishedAt: item.publishedAt,
+        snippet: item.snippet,
+        providerData: {
+          sourceName: item.sourceName,
+          sourceUrl: item.sourceUrl,
+          pubDate: item.pubDateRaw,
+          rssUrl: item.url,
+        },
+      });
+      if (items.length >= maxResults) break;
+    }
+
+    const metric = {
+      query: effectiveQuery,
+      rawReturned: Math.max(0, parts.length - 1),
+      afterRecency: parsedItems.length,
+      afterPreFilter: items.length,
+      used: false,
+    };
+    variantMetrics.push(metric);
+
+    lastResult = {
+      provider: 'googlenews',
+      fetchedAt: new Date().toISOString(),
+      query: effectiveQuery,
+      items,
+      metrics: {
+        used: items.length,
+        totalReturned: metric.rawReturned,
+        afterRecency: metric.afterRecency,
+        wrapperCandidates,
+        queryVariants: variantMetrics,
       },
-    });
-    if (items.length >= maxResults) break;
+    };
+
+    if (items.length > 0) {
+      metric.used = true;
+      return lastResult;
+    }
   }
 
-  return {
+  return lastResult ?? {
     provider: 'googlenews',
     fetchedAt: new Date().toISOString(),
-    query: effectiveQuery,
-    items,
+    query: fallbackQuery,
+    items: [],
     metrics: {
-      used: items.length,
-      totalReturned: Math.max(0, parts.length - 1),
-      wrapperCandidates,
+      used: 0,
+      totalReturned: 0,
+      afterRecency: 0,
+      wrapperCandidates: 0,
+      queryVariants: variantMetrics,
     },
   };
 };

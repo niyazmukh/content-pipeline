@@ -54,6 +54,9 @@ export const BASE_STOPWORDS = new Set([
   'weekly',
   'monthly',
   'today',
+  'focus',
+  'focused',
+  'notable',
 ]);
 
 const tokenize = (value: string): string[] =>
@@ -115,6 +118,32 @@ const cleanSegment = (segment: string, maxTokens: number): string | null => {
   return value.length ? value : null;
 };
 
+const DOMAIN_PHRASES = [
+  ['b2b', 'ecommerce'],
+  ['b2b', 'e-commerce'],
+  ['market', 'research'],
+  ['case', 'study'],
+  ['case', 'studies'],
+] as const;
+
+const extractDomainPhrases = (input: string, maxTerms: number): string[] => {
+  const normalized = input.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ');
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const phrase of DOMAIN_PHRASES) {
+    const pattern = new RegExp(`\\b${phrase.map((part) => part.replace('-', '[-\\s]?')).join('\\s+')}\\b`, 'i');
+    if (!pattern.test(normalized)) continue;
+    const text = phrase.join(' ');
+    if (seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+    if (out.length >= maxTerms) return out;
+  }
+
+  return out;
+};
+
 const splitQuerySegments = (raw: string): string[] => {
   if (!raw) return [];
   const segments: string[] = [];
@@ -164,7 +193,8 @@ export const deriveLooseTerms = (
 
   const segments = splitQuerySegments(query);
   const seen = new Set<string>();
-  const results: string[] = [];
+  const results: string[] = extractDomainPhrases(query, maxTerms);
+  results.forEach((term) => seen.add(term.toLowerCase()));
 
   for (const segment of segments) {
     const cleaned = cleanSegment(segment, maxTokensPerTerm);
@@ -193,19 +223,17 @@ const looksExactPhrase = (term: string): boolean => {
   return false;
 };
 
+const quoteTerm = (term: string): string => {
+  const clean = term.replace(/^"+|"+$/g, '').trim();
+  return clean ? `"${clean}"` : '';
+};
+
 export const normalizeGoogleLikeQuery = (input: string, options: { maxTerms?: number } = {}): string => {
   const maxTerms = Math.max(2, Math.min(options.maxTerms ?? 6, 10));
   const terms = deriveLooseTerms(input, { maxTerms, maxTokensPerTerm: 4 });
   if (!terms.length) return String(input || '').trim();
 
-  const normalized = terms.map((term) => {
-    const clean = term.replace(/^"+|"+$/g, '').trim();
-    if (!clean) return '';
-    if (looksExactPhrase(clean) && /\s/.test(clean)) {
-      return `"${clean}"`;
-    }
-    return clean;
-  }).filter(Boolean);
+  const normalized = terms.map(quoteTerm).filter(Boolean);
 
   if (!normalized.length) return String(input || '').trim();
   if (normalized.length === 1) return normalized[0];
@@ -218,9 +246,8 @@ export const normalizeNewsApiQuery = (input: string, options: { maxTerms?: numbe
   if (!terms.length) return String(input || '').trim();
 
   const normalized = terms
-    .map((term) => term.replace(/^"+|"+$/g, '').trim())
-    .filter(Boolean)
-    .map((term) => (/\s/.test(term) ? `"${term}"` : term));
+    .map(quoteTerm)
+    .filter(Boolean);
 
   if (!normalized.length) return String(input || '').trim();
   if (normalized.length === 1) return normalized[0];

@@ -274,6 +274,7 @@ const runPipelineToClusters = async ({ topic, recencyHours, onStageEvent }: RunA
       },
       body: JSON.stringify({
         runId,
+        mainQuery,
         recencyHours: candidatesJson.recencyHours,
         articles: acceptedArticles,
       }),

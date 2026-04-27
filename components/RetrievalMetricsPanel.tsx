@@ -38,6 +38,20 @@ const StatBox: React.FC<{ label: string; value: number }> = ({ label, value }) =
     </div>
 );
 
+const formatPercent = (value: number | undefined): string => `${Math.round((value ?? 0) * 100)}%`;
+
+const warningLabels: Record<string, string> = {
+  source_count_below_minimum: 'Too few strong sources',
+  topic_anchor_coverage_low: 'Topic coverage is weak',
+  provider_diversity_low: 'Provider diversity is low',
+  facet_coverage_incomplete: 'Some requested facets are missing',
+};
+
+const formatFacetLabel = (value: string): string =>
+  value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
 const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }) => {
   if (!metrics) {
     return null;
@@ -71,6 +85,9 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
   const displayedReturned = totalReturned || metrics.candidateCount;
   const displayedAttempts = totalAttempts || metrics.attemptedExtractions;
   const displayedAccepted = totalAccepted || metrics.accepted;
+  const quality = metrics.quality;
+  const qualityBadgeVariant = quality?.readyForSynthesis ? 'success' : 'warning';
+  const qualityBadgeText = quality?.readyForSynthesis ? 'Ready' : 'Needs Review';
 
   return (
     <Card 
@@ -96,6 +113,62 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
             <StatBox label="Accepted" value={displayedAccepted} />
         </div>
 
+      {quality && (
+        <div className="mb-6 rounded border border-slate-800 bg-slate-950/30 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-slate-200">Source Quality</p>
+                <Badge variant={qualityBadgeVariant}>{qualityBadgeText}</Badge>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-400 sm:grid-cols-4">
+                <span>Selected: <span className="font-mono text-slate-200">{quality.selectedSourceCount}</span></span>
+                <span>Rejected: <span className="font-mono text-slate-200">{quality.rejectedSourceCount}</span></span>
+                <span>Providers: <span className="font-mono text-slate-200">{quality.providerCount}</span></span>
+                <span>Anchor: <span className="font-mono text-slate-200">{formatPercent(quality.anchorCoverage)}</span></span>
+                <span className="col-span-2 sm:col-span-4">
+                  Evidence score: <span className="font-mono text-slate-200">{quality.averageEvidenceScore.toFixed(3)}</span>
+                </span>
+              </div>
+            </div>
+            {quality.warnings.length > 0 && (
+              <div className="flex max-w-xl flex-wrap gap-2">
+                {quality.warnings.map((warning) => (
+                  <Badge key={warning} variant="warning" title={warning}>
+                    {warningLabels[warning] ?? warning}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {Object.keys(quality.facets).length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {Object.entries(quality.facets).map(([facet, count]) => (
+                <Badge key={facet} variant={count > 0 ? 'neutral' : 'outline'} title={`${count} selected source(s)`}>
+                  {formatFacetLabel(facet)}: {count}
+                </Badge>
+              ))}
+            </div>
+          )}
+
+          {quality.rejected.length > 0 && (
+            <details className="mt-4">
+              <summary className="cursor-pointer text-xs font-medium text-slate-400 hover:text-slate-200">
+                Rejected source reasons
+              </summary>
+              <ul className="mt-2 space-y-1 text-xs text-slate-500">
+                {quality.rejected.slice(0, 6).map((item) => (
+                  <li key={item.id} className="truncate" title={`${item.title} - ${item.reasons.join(', ')}`}>
+                    <span className="text-slate-300">{item.sourceHost}</span>: {item.reasons.join(', ')}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+
       <div className="overflow-x-auto -mx-6 px-6 pb-2">
         <table className="min-w-full text-sm text-left text-slate-300">
           <thead className="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-800">
@@ -117,6 +190,8 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
               const rejectionSummary = formatReasonCounts(provider.rejectionReasons);
               const unique = computeUnique(provider);
               const skipped = computeSkipped(provider);
+              const variants = Array.isArray(provider.queryVariants) ? provider.queryVariants : [];
+              const usedVariant = variants.find((variant) => variant.used);
               return (
                 <tr key={provider.provider} className="group hover:bg-slate-800/30 transition-colors">
                   <td className="px-3 py-3">
@@ -133,6 +208,30 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
                       <div className="mt-1 text-xs text-slate-500 font-mono truncate max-w-[20rem]" title={provider.query}>
                         {provider.query}
                       </div>
+                    )}
+                    {usedVariant && (
+                      <div
+                        className="mt-1 text-xs text-emerald-400/70 font-mono truncate max-w-[20rem]"
+                        title={usedVariant.query}
+                      >
+                        Used: {usedVariant.query}
+                      </div>
+                    )}
+                    {variants.length > 1 && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-300">
+                          {variants.length} query variants
+                        </summary>
+                        <ul className="mt-1 space-y-1 text-xs text-slate-500">
+                          {variants.map((variant, index) => (
+                            <li key={`${provider.provider}-variant-${index}`} className="font-mono truncate max-w-[28rem]" title={variant.query}>
+                              {variant.used ? 'used' : 'skip'} raw {variant.rawReturned ?? 0}
+                              {typeof variant.afterRecency === 'number' ? ` / recent ${variant.afterRecency}` : ''}
+                              {typeof variant.afterPreFilter === 'number' ? ` / kept ${variant.afterPreFilter}` : ''}: {variant.query}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
                     )}
                     {rejectionSummary && (
                       <div className="mt-1 text-xs text-orange-400/70 truncate max-w-[20rem]" title={rejectionSummary}>

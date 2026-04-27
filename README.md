@@ -12,6 +12,38 @@ This repo contains:
 By default the UI calls same-origin `/api`.
 For local dev with a separate Express server, set `VITE_API_BASE=http://localhost:3001/api`.
 
+## Pipeline quality controls
+
+The pipeline retrieves candidates from Google CSE, Google News RSS, NewsAPI, and EventRegistry, then extracts and ranks articles before outline and article generation.
+
+Current reliability controls:
+
+- Provider-specific query planning expands a natural-language topic into source-appropriate query variants.
+- RSS, Google CSE, and NewsAPI report which query variants were tried and which one produced usable results.
+- Evidence scoring favors articles that contain topic anchors, requested facets, named entities, factual density, and usable body text.
+- A source quality gate selects the source set used for clustering and outline generation. Weak, thin, off-topic, or duplicate-domain sources can be rejected before synthesis.
+- Retrieval metrics in the UI show source readiness, selected/rejected source counts, provider diversity, anchor coverage, facet coverage, warnings, rejected-source reasons, and per-provider query diagnostics.
+
+For broad topics, include the core subject and the desired facets in the topic prompt, for example:
+
+```text
+Top B2B ecommerce news, focus on market research and reports, regulation, notable case studies and acquisitions.
+```
+
+If the UI shows `Needs Review`, inspect the retrieval diagnostics before generating the final article. The usual fixes are broadening the topic anchor, increasing the recency window, enabling more providers, or rerunning with clearer required facets.
+
+## Verification
+
+Before pushing pipeline changes, run:
+
+```bash
+npm run typecheck
+npx tsc -p tsconfig.server.json --noEmit
+npm test
+npm run lint
+npm run build
+```
+
 ## GitHub Pages (UI only)
 
 GitHub Pages cannot run the Express server. You have two options:

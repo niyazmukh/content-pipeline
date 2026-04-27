@@ -2,10 +2,12 @@ import type { AppConfig } from '../../shared/config';
 import type { Logger } from '../obs/logger';
 import { deduplicateArticles } from '../retrieval/dedup';
 import { rankAndClusterArticles } from '../retrieval/ranking';
+import { buildQueryIntent } from '../retrieval/queryIntent';
 import type { NormalizedArticle, StoryCluster } from '../retrieval/types';
 
 export interface ClusterArticlesArgs {
   runId: string;
+  mainQuery?: string;
   articles: NormalizedArticle[];
   recencyHours: number;
   config: AppConfig;
@@ -20,6 +22,7 @@ export interface ClusterArticlesResult {
 
 export const clusterArticles = async ({
   runId,
+  mainQuery,
   articles,
   recencyHours,
   config,
@@ -33,6 +36,7 @@ export const clusterArticles = async ({
     maxClusters: 5,
     clusterThreshold: config.retrieval.clusterThreshold ?? 0.65,
     attachThreshold: config.retrieval.attachThreshold ?? 0.55,
+    queryIntent: mainQuery ? buildQueryIntent(mainQuery) : undefined,
   });
 
   const duplicatesRemoved = articles.length - uniqueArticles.length;

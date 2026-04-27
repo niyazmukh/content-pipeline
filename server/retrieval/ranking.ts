@@ -1,11 +1,14 @@
 import type { NormalizedArticle, StoryCluster } from './types';
 import { computeSimilarity } from '../utils/text';
+import { scoreEvidenceQuality } from './evidenceQuality';
+import type { QueryIntent } from './queryIntent';
 
 export interface RankingOptions {
   recencyHours: number;
   maxClusters: number;
   clusterThreshold?: number;
   attachThreshold?: number;
+  queryIntent?: QueryIntent;
 }
 
 /**
@@ -55,13 +58,16 @@ const computeScore = (article: NormalizedArticle, options: RankingOptions): Rank
   const qualityScore = Number(Math.min(article.quality.wordCount / 1200, 1).toFixed(3));
   const relevanceScore = Number(article.quality.relevanceScore.toFixed(3));
   const domainWeight = getDomainWeight(article.canonicalUrl);
+  const evidence = scoreEvidenceQuality(article, options.queryIntent);
 
-  const baseScore = recencyScore * 0.4 + relevanceScore * 0.35 + qualityScore * 0.25;
+  const baseScore = recencyScore * 0.25 + relevanceScore * 0.15 + qualityScore * 0.15 + evidence.score * 0.45;
   const score = Number(Math.max(0, baseScore + domainWeight).toFixed(4));
   const reasons = [
     `recency=${recencyScore}`,
     `relevance=${relevanceScore}`,
     `quality=${qualityScore}`,
+    `evidence=${evidence.score}`,
+    ...evidence.reasons,
   ];
   if (domainWeight !== 0) {
     reasons.push(`domain=${domainWeight}`);
@@ -69,6 +75,10 @@ const computeScore = (article: NormalizedArticle, options: RankingOptions): Rank
 
   return {
     ...article,
+    quality: {
+      ...article.quality,
+      evidenceScore: evidence.score,
+    },
     score,
     reasons,
   };

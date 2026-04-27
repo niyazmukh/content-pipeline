@@ -6,11 +6,7 @@ import { fetchGoogleCandidates } from '../retrieval/connectors/google';
 import { fetchGoogleNewsRssCandidates } from '../retrieval/connectors/googleNewsRss';
 import { fetchNewsApiCandidates } from '../retrieval/connectors/newsapi';
 import { fetchEventRegistryCandidates } from '../retrieval/connectors/eventRegistry';
-import {
-  normalizeGoogleLikeQuery,
-  normalizeNewsApiQuery,
-  normalizeEventRegistryKeywords,
-} from '../retrieval/queryUtils';
+import { buildProviderQueryPlan } from '../retrieval/providerQueryPlan';
 import type { ConnectorResult, ConnectorArticle, ProviderName } from '../retrieval/types';
 import type { RetrievalCandidate, RetrievalProviderMetrics } from '../../shared/types';
 
@@ -119,16 +115,7 @@ export const retrieveCandidates = async ({
           searchQuery.newsapi ||
           (searchQuery.eventregistry && searchQuery.eventregistry.length ? searchQuery.eventregistry.join(' ') : topic));
 
-  const rawGoogleQuery = typeof searchQuery === 'string' ? searchQuery : (searchQuery.google || mainQuery);
-  const rawNewsApiQuery = typeof searchQuery === 'string' ? searchQuery : (searchQuery.newsapi || mainQuery);
-  const rawEventRegistryQuery =
-    typeof searchQuery === 'string'
-      ? [searchQuery]
-      : (searchQuery.eventregistry && searchQuery.eventregistry.length ? searchQuery.eventregistry : [mainQuery]);
-
-  const googleQuery = normalizeGoogleLikeQuery(rawGoogleQuery);
-  const newsApiQuery = normalizeNewsApiQuery(rawNewsApiQuery);
-  const eventRegistryQuery = normalizeEventRegistryKeywords(rawEventRegistryQuery);
+  const queryPlan = buildProviderQueryPlan(mainQuery || topic);
 
   const safeFetchConnector = async (
     provider: ProviderName,
@@ -154,17 +141,17 @@ export const retrieveCandidates = async ({
   };
 
   const connectorResults = await Promise.all([
-    safeFetchConnector('google', () => fetchGoogleCandidates(googleQuery, config, { signal, recencyHours }), googleQuery),
+    safeFetchConnector('google', () => fetchGoogleCandidates(queryPlan.google, config, { signal, recencyHours }), queryPlan.google),
     safeFetchConnector(
       'googlenews',
-      () => fetchGoogleNewsRssCandidates(googleQuery, config, { signal, recencyHours }),
-      googleQuery,
+      () => fetchGoogleNewsRssCandidates(queryPlan.googlenews, config, { signal, recencyHours }),
+      queryPlan.googlenews,
     ),
-    safeFetchConnector('newsapi', () => fetchNewsApiCandidates(newsApiQuery, config, { signal, recencyHours }), newsApiQuery),
+    safeFetchConnector('newsapi', () => fetchNewsApiCandidates(queryPlan.newsapi, config, { signal, recencyHours }), queryPlan.newsapi),
     safeFetchConnector(
       'eventregistry',
-      () => fetchEventRegistryCandidates(eventRegistryQuery, config, { signal, recencyHours }),
-      eventRegistryQuery,
+      () => fetchEventRegistryCandidates(queryPlan.eventregistry, config, { signal, recencyHours }),
+      queryPlan.eventregistry,
     ),
   ]);
 
@@ -178,6 +165,7 @@ export const retrieveCandidates = async ({
       bucket.disabled = Boolean(raw?.disabled);
       bucket.failed = Boolean(raw?.failed);
       bucket.error = typeof raw?.error === 'string' ? raw.error : null;
+      bucket.queryVariants = Array.isArray(raw?.queryVariants) ? raw.queryVariants : undefined;
     }
 
     for (const item of result.items) {

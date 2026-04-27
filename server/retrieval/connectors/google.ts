@@ -94,15 +94,20 @@ const looksLikeNewsArticleUrl = (rawUrl: string): boolean => {
 };
 
 export const fetchGoogleCandidates = async (
-  query: string,
+  query: string | string[],
   config: AppConfig,
   options: GoogleConnectorOptions = {},
 ): Promise<ConnectorResult> => {
+  const queryVariants = (Array.isArray(query) ? query : [query])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  const fallbackQuery = queryVariants[0] || '';
+
   if (!config.connectors.googleCse.enabled) {
     return {
       provider: 'google',
       fetchedAt: new Date().toISOString(),
-      query,
+      query: fallbackQuery,
       items: [],
       metrics: { disabled: true },
     };
@@ -115,7 +120,7 @@ export const fetchGoogleCandidates = async (
     return {
       provider: 'google',
       fetchedAt: new Date().toISOString(),
-      query,
+      query: fallbackQuery,
       items: [],
       metrics: { disabled: true },
     };
@@ -138,17 +143,22 @@ export const fetchGoogleCandidates = async (
     options.signal.addEventListener('abort', abortListener, { once: true });
   }
 
-  const items: ConnectorArticle[] = [];
-  let start = 1;
-  let pagesFetched = 0;
-
   try {
-    while (items.length < maxResults && start <= 91) {
+    const variantMetrics: Array<{ query: string; rawReturned: number; afterPreFilter: number; used: boolean }> = [];
+    let lastResult: ConnectorResult | null = null;
+
+    for (const effectiveQuery of queryVariants.length ? queryVariants : [fallbackQuery]) {
+      const items: ConnectorArticle[] = [];
+      let rawReturned = 0;
+      let start = 1;
+      let pagesFetched = 0;
+
+      while (items.length < maxResults && start <= 91) {
       const pageSize = Math.min(10, maxResults - items.length);
       const params = new URLSearchParams({
         key: apiKey,
         cx: searchEngineId,
-        q: query,
+        q: effectiveQuery,
         num: String(pageSize),
         start: String(start),
         // Per Custom Search API docs, use `dateRestrict` to limit recency and `sort=date` for ordering.
@@ -168,9 +178,9 @@ export const fetchGoogleCandidates = async (
           return {
             provider: 'google',
             fetchedAt: new Date().toISOString(),
-            query,
+            query: effectiveQuery,
             items: [],
-            metrics: { disabled: true, error: 'Quota exceeded' },
+            metrics: { disabled: true, error: 'Quota exceeded', queryVariants: variantMetrics },
           };
         }
         const text = await response.text();
@@ -178,6 +188,7 @@ export const fetchGoogleCandidates = async (
       }
 
       const data = (await response.json()) as { items?: Array<Record<string, any>> };
+      rawReturned += data.items?.length ?? 0;
 
       const pageItems = (data.items || [])
         .map((item) => {
@@ -239,7 +250,7 @@ export const fetchGoogleCandidates = async (
               return false; // Too old
             }
           }
-          const decision = applyPreFilter(article.url, article.title, article.snippet ?? null, query);
+          const decision = applyPreFilter(article.url, article.title, article.snippet ?? null, effectiveQuery);
           if (!decision.pass) {
             return false;
           }
@@ -255,16 +266,33 @@ export const fetchGoogleCandidates = async (
       start += pageSize;
     }
 
-    return {
+      const metric = { query: effectiveQuery, rawReturned, afterPreFilter: items.length, used: false };
+      variantMetrics.push(metric);
+      lastResult = {
       provider: 'google',
       fetchedAt: new Date().toISOString(),
-      query,
+        query: effectiveQuery,
       items: items.slice(0, maxResults),
       metrics: {
         pagesFetched,
         totalReturned: items.length,
         used: Math.min(items.length, maxResults),
+          queryVariants: variantMetrics,
       },
+    };
+
+      if (items.length > 0) {
+        metric.used = true;
+        return lastResult;
+      }
+    }
+
+    return lastResult ?? {
+      provider: 'google',
+      fetchedAt: new Date().toISOString(),
+      query: fallbackQuery,
+      items: [],
+      metrics: { pagesFetched: 0, totalReturned: 0, used: 0, queryVariants: variantMetrics },
     };
   } finally {
     if (abortListener && options.signal) {

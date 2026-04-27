@@ -17,15 +17,19 @@ const trunc = (value: string | null | undefined) =>
   value == null ? null : value.length > 600 ? `${value.slice(0, 597)}...` : value;
 
 export const fetchNewsApiCandidates = async (
-  query: string,
+  query: string | string[],
   config: AppConfig,
   options: NewsApiConnectorOptions = {},
 ): Promise<ConnectorResult> => {
+  const inputVariants = (Array.isArray(query) ? query : [query])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  const fallbackInput = inputVariants[0] || '';
   // Only sanitize if it looks like a raw natural language query (no operators)
-  const isStructured = /\b(AND|OR|NOT)\b/.test(query);
+  const isStructured = (value: string) => /\b(AND|OR|NOT)\b/.test(value);
   
-  const sanitizeForNewsApi = (value: string): string => {
-    if (isStructured) return value.trim();
+  const sanitizeForNewsApi = (value: string, structured = isStructured(value)): string => {
+    if (structured) return value.trim();
     return value
       .replace(/["]/g, ' ')
       .replace(/[^a-z0-9\s-]/gi, ' ')
@@ -37,7 +41,7 @@ export const fetchNewsApiCandidates = async (
     return {
       provider: 'newsapi',
       fetchedAt: new Date().toISOString(),
-      query,
+      query: fallbackInput,
       items: [],
       metrics: { disabled: true },
     };
@@ -48,7 +52,7 @@ export const fetchNewsApiCandidates = async (
     return {
       provider: 'newsapi',
       fetchedAt: new Date().toISOString(),
-      query,
+      query: fallbackInput,
       items: [],
       metrics: { disabled: true },
     };
@@ -73,6 +77,7 @@ export const fetchNewsApiCandidates = async (
 
   const attemptFetch = async (searchQuery: string) => {
     const items: ConnectorArticle[] = [];
+    let rawReturned = 0;
     let page = 1;
     while (page <= maxPages) {
       const params = new URLSearchParams({
@@ -121,6 +126,7 @@ export const fetchNewsApiCandidates = async (
           } satisfies ConnectorArticle;
         })
         .filter((article) => Boolean(article.url));
+      rawReturned += pageItems.length;
 
       const filteredPageItems = pageItems.filter((article) => {
         const decision = applyPreFilter(article.url, article.title, article.snippet ?? null, searchQuery);
@@ -138,26 +144,32 @@ export const fetchNewsApiCandidates = async (
     return {
       items,
       pagesFetched: Math.min(page, maxPages),
+      rawReturned,
       query: searchQuery,
     };
   };
 
-  let primaryQuery: string;
-  let fallbackQuery: string;
+  const buildQueryVariants = (rawQuery: string): string[] => {
+    let primaryQuery: string;
+    let fallbackQuery: string;
+    const structured = isStructured(rawQuery);
 
-  if (isStructured) {
-    primaryQuery = sanitizeForNewsApi(query);
+  if (structured) {
+    primaryQuery = sanitizeForNewsApi(rawQuery, structured);
     // Fallback: try to extract keywords and use implicit AND
-    const rawTerms = deriveLooseTerms(query, { maxTerms: 8, maxTokensPerTerm: 6 });
-    const cleanedTerms = rawTerms.map(sanitizeForNewsApi).filter(Boolean);
-    fallbackQuery = cleanedTerms.slice(0, 3).join(' ');
+    const rawTerms = deriveLooseTerms(rawQuery, { maxTerms: 8, maxTokensPerTerm: 6 });
+    const cleanedTerms = rawTerms.map((term) => sanitizeForNewsApi(term, false)).filter(Boolean);
+    fallbackQuery = cleanedTerms
+      .slice(0, 6)
+      .map((term) => (/\s/.test(term) ? `"${term}"` : term))
+      .join(' OR ');
   } else {
     // Variant 1: full sanitized string (lets NewsAPI decide how to interpret it).
-    primaryQuery = sanitizeForNewsApi(query);
+    primaryQuery = sanitizeForNewsApi(rawQuery, structured);
 
     // Variant 2: OR of a few extracted terms/phrases (helps for "A vs B", "A with a hint of B", etc.).
-    const rawTerms = deriveLooseTerms(query, { maxTerms: 8, maxTokensPerTerm: 6 });
-    const cleanedTerms = rawTerms.map(sanitizeForNewsApi).filter(Boolean);
+    const rawTerms = deriveLooseTerms(rawQuery, { maxTerms: 8, maxTokensPerTerm: 6 });
+    const cleanedTerms = rawTerms.map((term) => sanitizeForNewsApi(term, false)).filter(Boolean);
     const phraseOr = cleanedTerms
       .slice(0, 6)
       .map((term) => (/\s/.test(term) ? `"${term}"` : term))
@@ -178,18 +190,42 @@ export const fetchNewsApiCandidates = async (
     fallbackQuery = phraseOr || tokenOr || primaryQuery;
   }
 
-  const queryVariants = Array.from(new Set([primaryQuery, fallbackQuery].filter(Boolean)));
+    return Array.from(new Set([primaryQuery, fallbackQuery].filter(Boolean)));
+  };
+
+  const queryVariants = Array.from(new Set(inputVariants.flatMap(buildQueryVariants)));
+  const variantMetrics: Array<{ query: string; rawReturned: number; afterPreFilter: number; used: boolean }> = [];
 
   let lastError: Error | null = null;
+  let lastResult: ConnectorResult | null = null;
   try {
     for (let i = 0; i < queryVariants.length; i += 1) {
       const variant = queryVariants[i];
       try {
         const result = await attemptFetch(variant);
+        const metric = {
+          query: result.query,
+          rawReturned: result.rawReturned,
+          afterPreFilter: result.items.length,
+          used: false,
+        };
+        variantMetrics.push(metric);
         // If we got zero results and have another variant to try, keep going.
         if (result.items.length === 0 && i < queryVariants.length - 1) {
+          lastResult = {
+            provider: 'newsapi',
+            fetchedAt: new Date().toISOString(),
+            query: result.query,
+            items: result.items,
+            metrics: {
+              pagesFetched: result.pagesFetched,
+              totalCandidates: result.items.length,
+              queryVariants: variantMetrics,
+            },
+          };
           continue;
         }
+        metric.used = result.items.length > 0;
         return {
           provider: 'newsapi',
           fetchedAt: new Date().toISOString(),
@@ -198,6 +234,7 @@ export const fetchNewsApiCandidates = async (
           metrics: {
             pagesFetched: result.pagesFetched,
             totalCandidates: result.items.length,
+            queryVariants: variantMetrics,
           },
         };
       } catch (err) {
@@ -217,6 +254,7 @@ export const fetchNewsApiCandidates = async (
     if (lastError) {
       throw lastError;
     }
+    if (lastResult) return lastResult;
     throw new Error('NewsAPI fetch failed unexpectedly');
   } finally {
     if (abortListener && options.signal) {

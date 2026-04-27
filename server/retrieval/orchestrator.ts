@@ -12,10 +12,10 @@ import { rankAndClusterArticles } from './ranking';
 import { Semaphore } from '../utils/concurrency';
 import {
   tokenizeForRelevance,
-  normalizeGoogleLikeQuery,
-  normalizeNewsApiQuery,
-  normalizeEventRegistryKeywords,
 } from './queryUtils';
+import { buildProviderQueryPlan } from './providerQueryPlan';
+import { buildQueryIntent } from './queryIntent';
+import { selectQualitySources } from './sourceSelection';
 import type { ArtifactStore } from '../../shared/artifacts';
 import type {
   ProviderName,
@@ -106,14 +106,7 @@ export const retrieveUnified = async (
           query.newsapi ||
           (query.eventregistry && query.eventregistry.length ? query.eventregistry.join(' ') : 'multi-provider-query'));
 
-  const rawGoogleQuery = typeof query === 'string' ? query : (query.google || mainQueryString);
-  const rawNewsApiQuery = typeof query === 'string' ? query : (query.newsapi || mainQueryString);
-  const rawEventRegistryQuery =
-    typeof query === 'string' ? [query] : (query.eventregistry && query.eventregistry.length ? query.eventregistry : [mainQueryString]);
-
-  const googleQuery = normalizeGoogleLikeQuery(rawGoogleQuery);
-  const newsApiQuery = normalizeNewsApiQuery(rawNewsApiQuery);
-  const eventRegistryQuery = normalizeEventRegistryKeywords(rawEventRegistryQuery);
+  const queryPlan = buildProviderQueryPlan(mainQueryString);
   const queryTokens = tokenizeForRelevance(mainQueryString, { maxTokens: 24 });
 
   const filterOptions = {
@@ -151,16 +144,16 @@ export const retrieveUnified = async (
 
     const [google, googleNews, newsapi, eventRegistry] = await Promise.all([
       safeFetchConnector('google', () =>
-        fetchGoogleCandidates(googleQuery, config, { signal: controller.signal, recencyHours }), googleQuery
+        fetchGoogleCandidates(queryPlan.google, config, { signal: controller.signal, recencyHours }), queryPlan.google
       ),
       safeFetchConnector('googlenews', () =>
-        fetchGoogleNewsRssCandidates(googleQuery, config, { signal: controller.signal, recencyHours }), googleQuery
+        fetchGoogleNewsRssCandidates(queryPlan.googlenews, config, { signal: controller.signal, recencyHours }), queryPlan.googlenews
       ),
       safeFetchConnector('newsapi', () =>
-        fetchNewsApiCandidates(newsApiQuery, config, { signal: controller.signal, recencyHours }), newsApiQuery
+        fetchNewsApiCandidates(queryPlan.newsapi, config, { signal: controller.signal, recencyHours }), queryPlan.newsapi
       ),
       safeFetchConnector('eventregistry', () =>
-        fetchEventRegistryCandidates(eventRegistryQuery, config, { signal: controller.signal, recencyHours }), eventRegistryQuery
+        fetchEventRegistryCandidates(queryPlan.eventregistry, config, { signal: controller.signal, recencyHours }), queryPlan.eventregistry
       ),
     ]);
 
@@ -218,6 +211,7 @@ export const retrieveUnified = async (
         bucket.disabled = Boolean(raw?.disabled);
         bucket.failed = Boolean(raw?.failed);
         bucket.error = typeof raw?.error === 'string' ? raw.error : null;
+        bucket.queryVariants = Array.isArray(raw?.queryVariants) ? raw.queryVariants : undefined;
       }
 
       const metrics = result.metrics as any;
@@ -437,14 +431,29 @@ export const retrieveUnified = async (
     const uniqueArticles = dedupResult.unique;
 
     // Rank and Cluster
-    const { ranked, clusters } = rankAndClusterArticles(uniqueArticles, {
+    const queryIntent = buildQueryIntent(mainQueryString);
+    const { ranked } = rankAndClusterArticles(uniqueArticles, {
       recencyHours,
       maxClusters: 5,
       clusterThreshold: config.retrieval.clusterThreshold ?? 0.65,
       attachThreshold: config.retrieval.attachThreshold ?? 0.55,
+      queryIntent,
     });
 
-    const topArticles = ranked.slice(0, maxCandidates);
+    const sourceSelection = selectQualitySources(ranked, queryIntent, {
+      minSources: Math.min(Math.max(1, minAccepted), 8),
+      maxSources: Math.max(Math.min(maxCandidates, 16), Math.max(1, minAccepted)),
+    });
+    const selectedArticles = sourceSelection.selected;
+    const { clusters } = rankAndClusterArticles(selectedArticles, {
+      recencyHours,
+      maxClusters: 5,
+      clusterThreshold: config.retrieval.clusterThreshold ?? 0.65,
+      attachThreshold: config.retrieval.attachThreshold ?? 0.55,
+      queryIntent,
+    });
+
+    const topArticles = selectedArticles.slice(0, maxCandidates);
 
     // Save normalized articles
     await Promise.all(
@@ -495,6 +504,7 @@ export const retrieveUnified = async (
       duplicatesRemoved: extractedArticles.length - uniqueArticles.length,
       newestArticleHours: newestArticleHours == null ? null : Number(newestArticleHours.toFixed(2)),
       oldestArticleHours: oldestArticleHours == null ? null : Number(oldestArticleHours.toFixed(2)),
+      quality: sourceSelection.report,
       perProvider: providerSummaries,
       extractionErrors,
     };

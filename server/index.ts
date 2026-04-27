@@ -266,6 +266,7 @@ app.post('/api/cluster-articles', async (req: Request, res: Response) => {
   const body = req.body as any;
 
   const runId = typeof body?.runId === 'string' ? body.runId : '';
+  const mainQuery = typeof body?.mainQuery === 'string' ? body.mainQuery : '';
   const articles = Array.isArray(body?.articles) ? body.articles : [];
   const recencyHours = typeof body?.recencyHours === 'number' ? body.recencyHours : requestConfig.recencyHours;
 
@@ -277,6 +278,7 @@ app.post('/api/cluster-articles', async (req: Request, res: Response) => {
   try {
     const result = await clusterArticles({
       runId,
+      mainQuery,
       articles,
       recencyHours,
       config: requestConfig,

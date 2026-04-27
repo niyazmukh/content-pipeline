@@ -64,6 +64,9 @@ const mergeProviderSummaries = (
       if (typeof entry.query === 'string') {
         bucket.query = entry.query;
       }
+      if (Array.isArray(entry.queryVariants)) {
+        bucket.queryVariants = entry.queryVariants;
+      }
       if (typeof entry.preFiltered === 'number') {
         bucket.preFiltered = entry.preFiltered;
       }

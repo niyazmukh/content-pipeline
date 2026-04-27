@@ -33,6 +33,7 @@ build/
 
 # Generated run artifacts (model responses, search dumps)
 raw_data/
+graphify-out/
 
 # Coverage/test outputs
 coverage/

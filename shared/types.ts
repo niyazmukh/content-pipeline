@@ -33,6 +33,7 @@ export interface NormalizedArticle {
     wordCount: number;
     uniqueWordCount: number;
     relevanceScore: number;
+    evidenceScore?: number;
   };
   provenance?: ArticleProvenance;
 }
@@ -59,6 +60,13 @@ export interface RetrievalCandidate {
 export interface RetrievalProviderMetrics {
   provider: CandidateProvider;
   query?: string;
+  queryVariants?: Array<{
+    query: string;
+    rawReturned?: number;
+    afterRecency?: number;
+    afterPreFilter?: number;
+    used: boolean;
+  }>;
   returned: number;
   /**
    * Candidates removed by URL de-duplication before extraction selection.
@@ -96,8 +104,27 @@ export interface RetrievalMetrics {
   duplicatesRemoved: number;
   newestArticleHours: number | null;
   oldestArticleHours: number | null;
+  quality?: RetrievalQualityReport;
   perProvider: RetrievalProviderMetrics[];
   extractionErrors: Array<{ url: string; error: string; provider: 'google' | 'googlenews' | 'newsapi' | 'eventregistry' }>;
+}
+
+export interface RetrievalQualityReport {
+  selectedSourceCount: number;
+  rejectedSourceCount: number;
+  providerCount: number;
+  anchorCoverage: number;
+  averageEvidenceScore: number;
+  readyForSynthesis: boolean;
+  warnings: string[];
+  facets: Record<string, number>;
+  selectedSourceIds: string[];
+  rejected: Array<{
+    id: string;
+    title: string;
+    sourceHost: string;
+    reasons: string[];
+  }>;
 }
 
 export interface StoryCluster {
