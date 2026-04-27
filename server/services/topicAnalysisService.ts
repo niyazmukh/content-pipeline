@@ -14,6 +14,7 @@ export interface TopicAnalysisResult {
     end?: string;
   };
   queries: {
+    main?: string;
     google: string;
     newsapi: string;
     eventregistry: string[];
@@ -72,6 +73,9 @@ export class TopicAnalysisService {
       }
       if (queries.eventRegistry && !queries.eventregistry) {
         queries.eventregistry = queries.eventRegistry;
+      }
+      if (typeof queries.main !== 'string' || !queries.main.trim()) {
+        queries.main = typeof result.mainTopic === 'string' && result.mainTopic.trim() ? result.mainTopic.trim() : input;
       }
 
       return {

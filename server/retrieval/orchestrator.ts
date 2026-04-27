@@ -16,6 +16,7 @@ import {
 import { buildProviderQueryPlan } from './providerQueryPlan';
 import { buildQueryIntent } from './queryIntent';
 import { selectQualitySources } from './sourceSelection';
+import { isGoogleNewsWrapperUrl } from './googleNewsWrapper';
 import type { ArtifactStore } from '../../shared/artifacts';
 import type {
   ProviderName,
@@ -40,6 +41,13 @@ export interface RetrievalOrchestratorOptions {
 interface CandidateRecord extends ConnectorArticle {
   provider: ProviderName;
 }
+
+const EXTRACTION_PROVIDER_ORDER: ProviderName[] = ['google', 'newsapi', 'eventregistry', 'googlenews'];
+
+const extractionPriority = (candidate: CandidateRecord): number => {
+  if (candidate.provider === 'googlenews' && isGoogleNewsWrapperUrl(candidate.url)) return 2;
+  return 0;
+};
 
 const computeCandidateScore = (candidate: CandidateRecord, queryTokens: string[]): number => {
   const title = candidate.title || '';
@@ -72,7 +80,7 @@ const uniquenessKey = (url: string): string => {
 
 export const retrieveUnified = async (
   runId: string,
-  query: string | { main?: string; google?: string; newsapi?: string; eventregistry?: string[] },
+  query: string | { main?: string; coreTerms?: string[]; google?: string; newsapi?: string; eventregistry?: string[] },
   config: AppConfig,
   options: RetrievalOrchestratorOptions,
 ): Promise<RetrievalOrchestratorResult> => {
@@ -106,7 +114,16 @@ export const retrieveUnified = async (
           query.newsapi ||
           (query.eventregistry && query.eventregistry.length ? query.eventregistry.join(' ') : 'multi-provider-query'));
 
-  const queryPlan = buildProviderQueryPlan(mainQueryString);
+  const coreTerms =
+    typeof query === 'string'
+      ? []
+      : Array.isArray(query.coreTerms)
+        ? query.coreTerms
+        : typeof query.main === 'string' && query.main !== mainQueryString
+          ? [query.main]
+          : [];
+  const queryIntent = buildQueryIntent(mainQueryString, { coreTerms });
+  const queryPlan = buildProviderQueryPlan(queryIntent);
   const queryTokens = tokenizeForRelevance(mainQueryString, { maxTokens: 24 });
 
   const filterOptions = {
@@ -264,9 +281,9 @@ export const retrieveUnified = async (
     }
 
     // Sort each provider queue so the limited extraction budget is spent on the most likely relevant candidates.
-    for (const provider of ['google', 'googlenews', 'newsapi', 'eventregistry'] as ProviderName[]) {
+    for (const provider of EXTRACTION_PROVIDER_ORDER) {
       const queue = providerQueues.get(provider) ?? [];
-      queue.sort((a, b) => computeCandidateScore(b, queryTokens) - computeCandidateScore(a, queryTokens));
+      queue.sort((a, b) => extractionPriority(a) - extractionPriority(b) || computeCandidateScore(b, queryTokens) - computeCandidateScore(a, queryTokens));
       providerQueues.set(provider, queue);
       const bucket = providerMetrics.get(provider);
       if (bucket) {
@@ -284,7 +301,7 @@ export const retrieveUnified = async (
     ]);
     while (candidatesToTry.length < attemptBudget) {
       let progressed = false;
-      for (const provider of ['google', 'googlenews', 'newsapi', 'eventregistry'] as ProviderName[]) {
+      for (const provider of EXTRACTION_PROVIDER_ORDER) {
         if (candidatesToTry.length >= attemptBudget) break;
         const queue = providerQueues.get(provider);
         const next = queue?.shift();
@@ -296,7 +313,7 @@ export const retrieveUnified = async (
       if (!progressed) break;
     }
 
-    for (const provider of ['google', 'googlenews', 'newsapi', 'eventregistry'] as ProviderName[]) {
+    for (const provider of EXTRACTION_PROVIDER_ORDER) {
       const bucket = providerMetrics.get(provider);
       if (!bucket) continue;
       bucket.queued = queuedCounts.get(provider) ?? 0;
@@ -431,7 +448,6 @@ export const retrieveUnified = async (
     const uniqueArticles = dedupResult.unique;
 
     // Rank and Cluster
-    const queryIntent = buildQueryIntent(mainQueryString);
     const { ranked } = rankAndClusterArticles(uniqueArticles, {
       recencyHours,
       maxClusters: 5,

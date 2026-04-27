@@ -8,6 +8,10 @@ export interface QueryIntent {
   excludeTerms: string[];
 }
 
+export interface QueryIntentOptions {
+  coreTerms?: string[];
+}
+
 const INSTRUCTION_WORDS = new Set([
   ...BASE_STOPWORDS,
   'focus',
@@ -124,13 +128,18 @@ const deriveFallbackSubject = (topic: string): string[] => {
   return [tokens.slice(0, Math.min(2, tokens.length)).join(' ')];
 };
 
-export const buildQueryIntent = (topic: string): QueryIntent => {
+export const buildQueryIntent = (topic: string, options: QueryIntentOptions = {}): QueryIntent => {
   const originalTopic = String(topic || '').trim();
   const quoted = extractQuotedPhrases(originalTopic);
   const domainPhrases = extractDomainPhrases(originalTopic);
   let requiredEntities = extractEntities(originalTopic);
 
-  const subjectPhrases = [...domainPhrases];
+  const subjectPhrases: string[] = [];
+  (options.coreTerms ?? []).forEach((term) => {
+    if (knownFacetFor(term)) return;
+    addUnique(subjectPhrases, term, 10);
+  });
+  domainPhrases.forEach((phrase) => addUnique(subjectPhrases, phrase, 10));
   quoted.forEach((phrase) => {
     if (knownFacetFor(phrase)) return;
     addUnique(subjectPhrases, phrase, 10);

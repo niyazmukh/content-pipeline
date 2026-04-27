@@ -7,6 +7,7 @@ import { fetchGoogleNewsRssCandidates } from '../retrieval/connectors/googleNews
 import { fetchNewsApiCandidates } from '../retrieval/connectors/newsapi';
 import { fetchEventRegistryCandidates } from '../retrieval/connectors/eventRegistry';
 import { buildProviderQueryPlan } from '../retrieval/providerQueryPlan';
+import { buildQueryIntent } from '../retrieval/queryIntent';
 import type { ConnectorResult, ConnectorArticle, ProviderName } from '../retrieval/types';
 import type { RetrievalCandidate, RetrievalProviderMetrics } from '../../shared/types';
 
@@ -96,11 +97,11 @@ export const retrieveCandidates = async ({
   const runId = providedRunId && providedRunId.trim().length ? providedRunId.trim() : randomId();
   const recencyHours = recencyHoursOverride ?? config.recencyHours;
 
-  let searchQuery: string | { google?: string; newsapi?: string; eventregistry?: string[]; main?: string } = topic;
+  let searchQuery: string | { google?: string; newsapi?: string; eventregistry?: string[]; main?: string; coreTerms?: string[] } = topic;
   try {
     const analysisService = new TopicAnalysisService(config, logger);
     const analysis = await analysisService.analyze(topic, signal);
-    searchQuery = { main: topic, ...analysis.queries };
+    searchQuery = { main: topic, coreTerms: analysis.queries.main ? [analysis.queries.main] : undefined, ...analysis.queries };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('Topic analysis failed; using raw topic', { runId, error: message });
@@ -115,7 +116,15 @@ export const retrieveCandidates = async ({
           searchQuery.newsapi ||
           (searchQuery.eventregistry && searchQuery.eventregistry.length ? searchQuery.eventregistry.join(' ') : topic));
 
-  const queryPlan = buildProviderQueryPlan(mainQuery || topic);
+  const coreTerms =
+    typeof searchQuery === 'string'
+      ? []
+      : Array.isArray(searchQuery.coreTerms)
+        ? searchQuery.coreTerms
+        : typeof searchQuery.main === 'string' && searchQuery.main !== mainQuery
+          ? [searchQuery.main]
+          : [];
+  const queryPlan = buildProviderQueryPlan(buildQueryIntent(mainQuery || topic, { coreTerms }));
 
   const safeFetchConnector = async (
     provider: ProviderName,

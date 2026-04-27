@@ -42,6 +42,21 @@ describe('query intent and provider query planning', () => {
     expect(plan.newsapi[0]).toBe('("b2b ecommerce" OR "b2b e-commerce") AND ("case studies")');
   });
 
+  it('uses LLM-provided core terms as anchors while keeping original-topic facets', () => {
+    const intent = buildQueryIntent(
+      'Top B2B ecommerce news (focus on market research and reports, regulation, notable case studies and acquisitions).',
+      { coreTerms: ['b2b ecommerce', 'b2b e-commerce'] },
+    );
+    const plan = buildProviderQueryPlan(intent);
+
+    expect(intent.subjectPhrases).toEqual(['b2b ecommerce', 'b2b e-commerce']);
+    expect(intent.facets).toEqual(expect.arrayContaining(['market research', 'regulation', 'case studies', 'acquisitions']));
+    expect(plan.googlenews[0]).toBe('"b2b ecommerce" OR "b2b e-commerce"');
+    expect(plan.googlenews[0]).not.toContain('case studies');
+    expect(plan.newsapi[0]).toContain('AND');
+    expect(plan.newsapi[0]).toContain('"case studies"');
+  });
+
   it('handles another domain without hard-coding B2B ecommerce as the only anchor', () => {
     const intent = buildQueryIntent('Top AI chip export control news, focus on regulation and Nvidia/AMD case studies.');
     const plan = buildProviderQueryPlan(intent);

@@ -5,6 +5,7 @@ import { extractArticle } from '../retrieval/extraction';
 import { GOOGLE_NEWS_WRAPPER_SKIP_ERROR } from '../retrieval/extraction';
 import { evaluateArticle } from '../retrieval/filters';
 import { tokenizeForRelevance } from '../retrieval/queryUtils';
+import { isGoogleNewsWrapperUrl } from '../retrieval/googleNewsWrapper';
 import type { ProviderName, NormalizedArticle } from '../retrieval/types';
 import type { RetrievalCandidate, RetrievalProviderMetrics } from '../../shared/types';
 
@@ -38,6 +39,13 @@ const initProviderMetrics = (): Map<ProviderName, RetrievalProviderMetrics> => {
     });
   });
   return map;
+};
+
+const EXTRACTION_PROVIDER_ORDER: ProviderName[] = ['google', 'newsapi', 'eventregistry', 'googlenews'];
+
+const extractionPriority = (candidate: RetrievalCandidate): number => {
+  if (candidate.provider === 'googlenews' && isGoogleNewsWrapperUrl(candidate.url)) return 2;
+  return 0;
 };
 
 export const extractBatch = async ({
@@ -100,7 +108,11 @@ export const extractBatch = async ({
   }
 
   const orderedCandidates: RetrievalCandidate[] = [];
-  const providers: ProviderName[] = ['google', 'googlenews', 'newsapi', 'eventregistry'];
+  for (const provider of EXTRACTION_PROVIDER_ORDER) {
+    const queue = providerQueues.get(provider) ?? [];
+    queue.sort((a, b) => extractionPriority(a) - extractionPriority(b));
+  }
+  const providers: ProviderName[] = EXTRACTION_PROVIDER_ORDER;
   let added = 0;
   while (added < Math.min(candidates.length, maxAttempts)) {
     let progressed = false;

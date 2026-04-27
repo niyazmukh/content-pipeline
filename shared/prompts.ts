@@ -231,8 +231,12 @@ Current Date: {CURRENT_DATE}
 ## Instructions
 
 1) Analyze intent: determine the core subject and the most important facets.
-2) Extract keywords: identify 3-5 specific, high-value keywords or entities. Avoid generic words and stopwords.
-3) Generate provider-specific queries:
+2) Extract core searchable elements: identify 1-3 exact subject phrases/entities that MUST be present for a result to be about the topic.
+   - These are anchors, not facets.
+   - Example: for "Top B2B ecommerce news (focus on market research, regulation, case studies and acquisitions)", core searchable elements are ["b2b ecommerce", "b2b e-commerce"].
+   - Do NOT include facets such as "market research", "reports", "regulation", "case studies", or "acquisitions" as core searchable elements unless they are the actual subject.
+3) Extract keywords: identify 3-5 specific, high-value keywords or entities. Avoid generic words and stopwords.
+4) Generate provider-specific queries:
    - Google CSE:
      - Keyword-centric. Use quotes ONLY for proper nouns / named entities (e.g., "European Union").
      - Use OR for synonyms or alternate terms. Avoid long sentences. Target <= ~32 words.
@@ -250,6 +254,7 @@ Current Date: {CURRENT_DATE}
   "mainTopic": "Short descriptive topic label",
   "keywords": ["keyword1", "keyword2", "keyword3"],
   "queries": {
+    "main": "core searchable subject only, no facets or instructions",
     "google": "optimized query string for Google",
     "newsapi": "optimized query string for NewsAPI",
     "eventregistry": ["keyword1", "keyword2"]

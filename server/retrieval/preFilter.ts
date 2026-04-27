@@ -46,6 +46,25 @@ const BANNED_FRAGMENTS = [
   '/atom',
 ];
 
+const SECTION_LANDING_SEGMENTS = new Set([
+  'news',
+  'blog',
+  'blogs',
+  'business',
+  'technology',
+  'tech',
+  'markets',
+  'finance',
+  'economy',
+  'retail',
+  'ecommerce',
+  'research',
+  'reports',
+  'press',
+  'press-release',
+  'insights',
+]);
+
 /**
  * Minimum lengths for title and snippet.
  */
@@ -97,13 +116,22 @@ export const applyPreFilter = (
   }
 
   let isGoogleNewsRssWrapper = false;
+  let parsedUrl: URL | null = null;
   try {
     const parsed = new URL(url);
+    parsedUrl = parsed;
     isGoogleNewsRssWrapper =
       parsed.hostname === 'news.google.com' &&
       /\/rss\/articles\//i.test(parsed.pathname);
   } catch {
     // ignore parse errors; fall back to generic checks
+  }
+
+  if (parsedUrl && !isGoogleNewsRssWrapper) {
+    const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
+    if (pathSegments.length === 1 && SECTION_LANDING_SEGMENTS.has(pathSegments[0].toLowerCase())) {
+      return { pass: false, reason: 'section_landing_page' };
+    }
   }
 
   // Check banned path patterns
