@@ -100,7 +100,7 @@ export const retrieveCandidates = async ({
   try {
     const analysisService = new TopicAnalysisService(config, logger);
     const analysis = await analysisService.analyze(topic, signal);
-    searchQuery = analysis.queries;
+    searchQuery = { main: topic, ...analysis.queries };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('Topic analysis failed; using raw topic', { runId, error: message });

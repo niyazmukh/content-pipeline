@@ -50,12 +50,12 @@ export const handleRunRetrievalStream = async ({
     currentStage = retrievalStage;
     retrievalStage.start({ message: `Preparing queries for "${topic}"` });
 
-    let searchQuery: string | { google: string; newsapi: string; eventregistry: string[] } = topic;
+    let searchQuery: string | { main: string; google: string; newsapi: string; eventregistry: string[] } = topic;
     try {
       const analysisService = new TopicAnalysisService(config, logger);
       retrievalStage.progress({ message: 'Analyzing topic with Gemini' });
       const analysis = await analysisService.analyze(topic, signal);
-      searchQuery = analysis.queries;
+      searchQuery = { main: topic, ...analysis.queries };
       logger.info('Topic analysis result', { runId, analysis });
       retrievalStage.progress({ message: 'Topic analysis complete; starting retrieval' });
     } catch (error) {

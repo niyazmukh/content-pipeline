@@ -34,6 +34,16 @@ const FACET_SYNONYMS = new Map<string, string>([
   ['export controls', 'export control'],
 ]);
 
+const normalizePhrase = (value: string): string => value.toLowerCase().replace(/\s+/g, ' ').trim();
+
+const knownFacetFor = (value: string): string | null => {
+  const normalized = normalizePhrase(value);
+  for (const [needle, facet] of FACET_SYNONYMS.entries()) {
+    if (normalizePhrase(needle) === normalized) return facet;
+  }
+  return null;
+};
+
 const DOMAIN_PHRASE_PATTERNS: Array<{ pattern: RegExp; phrases: string[] }> = [
   { pattern: /\bb2b\s+e-?commerce\b/i, phrases: ['b2b ecommerce', 'b2b e-commerce'] },
   { pattern: /\bai\s+chips?\b/i, phrases: ['ai chip'] },
@@ -121,7 +131,10 @@ export const buildQueryIntent = (topic: string): QueryIntent => {
   let requiredEntities = extractEntities(originalTopic);
 
   const subjectPhrases = [...domainPhrases];
-  quoted.forEach((phrase) => addUnique(subjectPhrases, phrase, 10));
+  quoted.forEach((phrase) => {
+    if (knownFacetFor(phrase)) return;
+    addUnique(subjectPhrases, phrase, 10);
+  });
   if (!subjectPhrases.length) {
     deriveFallbackSubject(originalTopic).forEach((phrase) => addUnique(subjectPhrases, phrase, 10));
   }

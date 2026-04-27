@@ -31,6 +31,17 @@ describe('query intent and provider query planning', () => {
     );
   });
 
+  it('does not promote quoted facet phrases from LLM boolean queries into anchors', () => {
+    const intent = buildQueryIntent('"b2b ecommerce" OR "b2b e-commerce" OR "case studies"');
+    const plan = buildProviderQueryPlan(intent);
+
+    expect(intent.subjectPhrases).toEqual(['b2b ecommerce', 'b2b e-commerce']);
+    expect(intent.facets).toContain('case studies');
+    expect(plan.googlenews[0]).toBe('"b2b ecommerce" OR "b2b e-commerce"');
+    expect(plan.googlenews[0]).not.toContain('case studies');
+    expect(plan.newsapi[0]).toBe('("b2b ecommerce" OR "b2b e-commerce") AND ("case studies")');
+  });
+
   it('handles another domain without hard-coding B2B ecommerce as the only anchor', () => {
     const intent = buildQueryIntent('Top AI chip export control news, focus on regulation and Nvidia/AMD case studies.');
     const plan = buildProviderQueryPlan(intent);

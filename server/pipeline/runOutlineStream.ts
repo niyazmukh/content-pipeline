@@ -137,11 +137,11 @@ export const handleRunOutlineStream = async ({
   let currentStage = retrievalStage;
 
   try {
-    let searchQuery: string | { google: string; newsapi: string; eventregistry: string[] } = topic;
+    let searchQuery: string | { main: string; google: string; newsapi: string; eventregistry: string[] } = topic;
     try {
       const analysisService = new TopicAnalysisService(config, logger);
       const analysis = await analysisService.analyze(topic, signal);
-      searchQuery = analysis.queries;
+      searchQuery = { main: topic, ...analysis.queries };
       logger.info('Topic analysis result', { runId, analysis });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

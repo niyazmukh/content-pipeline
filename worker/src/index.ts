@@ -349,6 +349,7 @@ export default {
 
       const runId = typeof (body as any)?.runId === 'string' ? String((body as any).runId) : '';
       const articles = Array.isArray((body as any)?.articles) ? ((body as any).articles as any[]) : [];
+      const mainQuery = typeof (body as any)?.mainQuery === 'string' ? String((body as any).mainQuery) : '';
       const recencyHours = typeof (body as any)?.recencyHours === 'number' ? Number((body as any).recencyHours) : config.recencyHours;
 
       if (!runId || !Array.isArray(articles)) {
@@ -359,6 +360,7 @@ export default {
         const result = await clusterArticles({
           runId,
           articles: articles as any,
+          mainQuery,
           recencyHours,
           config,
           logger,
