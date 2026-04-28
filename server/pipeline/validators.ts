@@ -290,6 +290,11 @@ const PROMO_PATTERNS: RegExp[] = [
   /\bbest price\b/i,
 ];
 
+export const PROMOTION_POLICY_ERROR =
+  'Avoid promotional or call-to-action language; keep the tone analytical and reportorial.';
+
+export const isEditorialValidationError = (error: string): boolean => error === PROMOTION_POLICY_ERROR;
+
 export const validatePromotionPolicy = (text: string): string[] => {
   if (!text || !text.trim()) return [];
   const sentences = text
@@ -306,6 +311,6 @@ export const validatePromotionPolicy = (text: string): string[] => {
     }
   }
   return hasPromotionError
-    ? ['Avoid promotional or call-to-action language; keep the tone analytical and reportorial.']
+    ? [PROMOTION_POLICY_ERROR]
     : [];
 };

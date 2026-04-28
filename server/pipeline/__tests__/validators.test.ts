@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateArticleBody, validatePromotionPolicy } from '../validators';
+import { isEditorialValidationError, validateArticleBody, validatePromotionPolicy } from '../validators';
 
 describe('validateArticleBody', () => {
   it('recognizes markdown-styled Key developments headers', () => {
@@ -32,6 +32,13 @@ describe('validatePromotionPolicy', () => {
     );
 
     expect(errors).toEqual(['Avoid promotional or call-to-action language; keep the tone analytical and reportorial.']);
+  });
+
+  it('classifies promotion-policy failures as editorial validation issues', () => {
+    expect(
+      isEditorialValidationError('Avoid promotional or call-to-action language; keep the tone analytical and reportorial.'),
+    ).toBe(true);
+    expect(isEditorialValidationError('Article references citation IDs not in Source Catalog: 99')).toBe(false);
   });
 });
 

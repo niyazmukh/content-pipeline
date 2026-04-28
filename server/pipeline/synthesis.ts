@@ -5,7 +5,13 @@ import { loadPrompt } from '../prompts/loader';
 import type { StoryCluster } from '../retrieval/types';
 import { LLMService } from '../services/llmService';
 import type { Logger } from '../obs/logger';
-import { validateArticleBody, computeNoveltyScore, OutlinePayload, validatePromotionPolicy } from './validators';
+import {
+  validateArticleBody,
+  computeNoveltyScore,
+  OutlinePayload,
+  validatePromotionPolicy,
+  isEditorialValidationError,
+} from './validators';
 import type { EvidenceItem } from './types';
 import { describeRecencyWindow } from '../utils/text';
 
@@ -415,6 +421,21 @@ export const synthesizeArticle = async ({
       errors = fatalErrors;
       logger.warn('Article validation failed', { runId, attempt, errors });
       if (attempt >= 3) {
+        const editorialOnly = fatalErrors.every(isEditorialValidationError);
+        if (editorialOnly) {
+          const noveltyScore = computeNoveltyScore(previousArticle ?? null, coerced.article);
+          return {
+            article: coerced,
+            rawResponse,
+            attempts: attempt,
+            noveltyScore,
+            sourceCatalog: resolvedCatalog,
+            warnings: [
+              ...latestWarnings,
+              ...fatalErrors.map((error) => `Article returned after repair attempts with unresolved editorial warning: ${error}`),
+            ],
+          };
+        }
         throw new Error(`Article validation failed: ${errors.join('; ')}`);
       }
       continue;
