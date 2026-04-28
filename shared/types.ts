@@ -190,10 +190,21 @@ export interface ImagePromptSlide {
   negativePrompt?: string;
 }
 
+export type ImagePromptFocus = 'automatic' | 'infographic' | 'conceptual' | 'technical' | 'on_the_scene';
+export type ImagePromptStyle = 'editorial' | 'flat_minimalist' | 'isometric_3d' | 'classic_blueprint';
+export type ImagePromptDetailLevel = 'balanced' | 'high_precision';
+
+export interface ImagePromptPreferences {
+  focus?: ImagePromptFocus;
+  style?: ImagePromptStyle;
+  detailLevel?: ImagePromptDetailLevel;
+}
+
 export interface ImagePromptGenerationResult {
   runId: string;
   slides: ImagePromptSlide[];
   prompt?: string;
+  preferences?: ImagePromptPreferences;
 }
 
 export interface ApiConfigResponse {

@@ -8,6 +8,10 @@ import type {
   EvidenceItem,
   ArticleGenerationResult,
   ImagePromptSlide,
+  ImagePromptFocus,
+  ImagePromptPreferences,
+  ImagePromptStyle,
+  ImagePromptDetailLevel,
   RetrievalMetrics,
   ApiConfigResponse,
   ApiHealthResponse,
@@ -87,9 +91,19 @@ const App: React.FC = () => {
   const [retrievalMetrics, setRetrievalMetrics] = useState<RetrievalMetrics | null>(null);
   const [publicConfig, setPublicConfig] = useState<ApiConfigResponse | null>(null);
   const [recencyHours, setRecencyHours] = useState<number>(168);
+  const [imagePrefs, setImagePrefs] = useState<ImagePromptPreferences>({
+    focus: 'automatic',
+    style: 'editorial',
+    detailLevel: 'balanced',
+  });
   const [runRecencyHours, setRunRecencyHours] = useState<number | null>(null);
   const [apiKeys, setApiKeys] = useState<ApiKeys>(() => loadApiKeys());
   const [health, setHealth] = useState<ApiHealthResponse | null>(null);
+
+  const setImageFocus = (focus: ImagePromptFocus) => setImagePrefs((prefs) => ({ ...prefs, focus }));
+  const setImageStyle = (style: ImagePromptStyle) => setImagePrefs((prefs) => ({ ...prefs, style }));
+  const setImageDetailLevel = (detailLevel: ImagePromptDetailLevel) =>
+    setImagePrefs((prefs) => ({ ...prefs, detailLevel }));
   const [healthError, setHealthError] = useState<string>('');
   const [stageMessages, setStageMessages] = useState<Record<StageName, string>>(buildInitialStageMessages);
   const [stageEventLog, setStageEventLog] = useState<Array<StageEvent<unknown>>>([]);
@@ -419,6 +433,7 @@ const App: React.FC = () => {
       const image = await generateImagePrompt({
         runId: outlineResult.runId,
         article: article.article.article,
+        preferences: imagePrefs,
       }, handleStageEvent);
 
       setImagePrompts(image.slides);
@@ -542,6 +557,54 @@ const App: React.FC = () => {
                     <option value={336}>Last 14 days</option>
                     <option value={504}>Last 21 days</option>
                     <option value={720}>Last 30 days</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-slate-800/50 flex flex-wrap gap-4 items-end text-xs text-slate-400">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-slate-300 font-medium inline-flex items-center gap-2">
+                    Image Focus
+                    <HelpTip label="Focus: prioritizes specific visual strategies.\n- Automatic: AI chooses.\n- Infographic: charts & data.\n- Conceptual: metaphors.\n- Technical: hardware & detail.\n- On the scene: events & humans." />
+                  </label>
+                  <select
+                    className="bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring focus:ring-blue-500/40"
+                    value={imagePrefs.focus}
+                    onChange={(e) => setImageFocus(e.target.value as ImagePromptFocus)}
+                  >
+                    <option value="automatic">Automatic</option>
+                    <option value="infographic">Infographic focus</option>
+                    <option value="conceptual">Conceptual metaphors</option>
+                    <option value="technical">Technical/Hardware</option>
+                    <option value="on_the_scene">On the scene</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-slate-300 font-medium inline-flex items-center gap-2">
+                    Visual Style
+                    <HelpTip label="Style: controls the artistic rendering of the images." />
+                  </label>
+                  <select
+                    className="bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring focus:ring-blue-500/40"
+                    value={imagePrefs.style}
+                    onChange={(e) => setImageStyle(e.target.value as ImagePromptStyle)}
+                  >
+                    <option value="editorial">Editorial Photo</option>
+                    <option value="flat_minimalist">Flat Minimalist</option>
+                    <option value="isometric_3d">3D Isometric</option>
+                    <option value="classic_blueprint">Technical Blueprint</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-slate-300 font-medium inline-flex items-center gap-2">
+                    Detail Level
+                  </label>
+                  <select
+                    className="bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring focus:ring-blue-500/40"
+                    value={imagePrefs.detailLevel}
+                    onChange={(e) => setImageDetailLevel(e.target.value as ImagePromptDetailLevel)}
+                  >
+                    <option value="balanced">Balanced</option>
+                    <option value="high_precision">High Precision</option>
                   </select>
                 </div>
                 {publicConfig && (

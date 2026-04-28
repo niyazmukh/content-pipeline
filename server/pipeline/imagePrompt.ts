@@ -1,5 +1,11 @@
 import type { AppConfig } from '../../shared/config';
-import type { ImagePromptSlide } from '../../shared/types';
+import type {
+  ImagePromptDetailLevel,
+  ImagePromptFocus,
+  ImagePromptPreferences,
+  ImagePromptSlide,
+  ImagePromptStyle,
+} from '../../shared/types';
 import { loadPrompt } from '../prompts/loader';
 import { LLMService } from '../services/llmService';
 import type { Logger } from '../obs/logger';
@@ -9,6 +15,7 @@ import { extractJson, extractJsonRobust } from '../utils/jsonExtract';
 export interface ImagePromptArgs {
   runId: string;
   article: string;
+  preferences?: ImagePromptPreferences;
   config: AppConfig;
   logger: Logger;
   signal?: AbortSignal;
@@ -20,6 +27,44 @@ export interface ImagePromptResult {
 }
 
 type ImagePromptJson = { slides?: unknown };
+
+const FOCUS_VALUES = ['automatic', 'infographic', 'conceptual', 'technical', 'on_the_scene'] as const;
+const STYLE_VALUES = ['editorial', 'flat_minimalist', 'isometric_3d', 'classic_blueprint'] as const;
+const DETAIL_VALUES = ['balanced', 'high_precision'] as const;
+
+const isOneOf = <T extends string>(value: unknown, allowed: readonly T[]): value is T =>
+  typeof value === 'string' && (allowed as readonly string[]).includes(value);
+
+export const normalizeImagePromptPreferences = (preferences: unknown): Required<ImagePromptPreferences> => {
+  const raw = preferences && typeof preferences === 'object' ? (preferences as Record<string, unknown>) : {};
+  const focus: ImagePromptFocus = isOneOf(raw.focus, FOCUS_VALUES) ? raw.focus : 'automatic';
+  const style: ImagePromptStyle = isOneOf(raw.style, STYLE_VALUES) ? raw.style : 'editorial';
+  const detailLevel: ImagePromptDetailLevel = isOneOf(raw.detailLevel, DETAIL_VALUES) ? raw.detailLevel : 'balanced';
+  return { focus, style, detailLevel };
+};
+
+const FOCUS_INSTRUCTIONS: Record<ImagePromptFocus, string> = {
+  automatic: 'Pick the most relevant visual strategy for each slide.',
+  infographic:
+    'Prioritize data visualization. Use clean charts, timelines, or process flows that translate the article numbers or steps into visual form. Focus on clarity and data-grounding.',
+  conceptual:
+    'Use sophisticated visual metaphors to represent abstract ideas. Avoid literal "dashboards". Use industrial or natural elements as metaphors for market or technical dynamics.',
+  technical:
+    'Focus on the "how it works". Show precise details of machinery, circuit boards, laboratory equipment, or architectural sections. Use cold, clinical, high-tech lighting.',
+  on_the_scene:
+    'Visualize the "where and who". Show events as they happen: a high-stakes meeting, a bustling port at dawn, a factory floor in motion. Focus on the human element and environmental detail.',
+};
+
+const STYLE_GUIDELINES: Record<ImagePromptStyle, string> = {
+  editorial:
+    'Photorealistic, editorial photography style. Cinematic lighting, shallow depth of field, natural colors, professional color grading.',
+  flat_minimalist:
+    'Clean, 2D vector illustration. Flat colors, bold shapes, minimalist aesthetic, no gradients or shadows. Modern professional illustration.',
+  isometric_3d:
+    '3D rendered isometric view. Soft clay-like materials or high-gloss plastic. Clean, toy-like but professional aesthetic. Good for representing systems.',
+  classic_blueprint:
+    'Blueprint or technical drawing style. White lines on blue background or black ink on architectural vellum. Highly detailed technical annotations.',
+};
 
 const normalizeSlide = (value: unknown): ImagePromptSlide | null => {
   if (!value || typeof value !== 'object') return null;
@@ -80,14 +125,29 @@ const parseImagePrompt = (raw: string): ImagePromptSlide[] => {
 export const generateImagePrompt = async ({
   runId,
   article,
+  preferences,
   config,
   logger,
   signal,
 }: ImagePromptArgs): Promise<ImagePromptResult> => {
   const template = loadPrompt('image_prompt.md');
-  const hydrated = template.replace('{ARTICLE_CONTENT}', article);
 
-  logger.info('Generating image prompt', { runId });
+  const normalizedPreferences = normalizeImagePromptPreferences(preferences);
+  const { focus, style, detailLevel } = normalizedPreferences;
+
+  const prefsDesc = `Focus: ${focus}, Style: ${style}, Detail Level: ${detailLevel}`;
+  const focusInstr = FOCUS_INSTRUCTIONS[focus];
+  const styleInstr = STYLE_GUIDELINES[style];
+  const wordLimit = detailLevel === 'high_precision' ? '150' : '80';
+
+  const hydrated = template
+    .replace('{ARTICLE_CONTENT}', article)
+    .replace('{IMAGE_PREFERENCES}', prefsDesc)
+    .replace('{FOCUS_INSTRUCTIONS}', focusInstr)
+    .replace('{STYLE_GUIDELINES}', styleInstr)
+    .replace('{WORD_LIMIT}', wordLimit);
+
+  logger.info('Generating image prompt', { runId, focus, style, detailLevel });
 
   const llmService = new LLMService(config, logger);
 

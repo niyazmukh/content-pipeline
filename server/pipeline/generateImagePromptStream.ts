@@ -1,9 +1,10 @@
 import type { AppConfig } from '../../shared/config';
 import type { SseStream } from '../../shared/sse';
 import { makeStageEmitter } from './stageEmitter';
-import { generateImagePrompt } from './imagePrompt';
+import { generateImagePrompt, normalizeImagePromptPreferences } from './imagePrompt';
 import { createLogger } from '../obs/logger';
 import type { ArtifactStore } from '../../shared/artifacts';
+import type { ImagePromptPreferences } from '../../shared/types';
 
 export interface GenerateImagePromptStreamArgs {
   body: unknown;
@@ -16,6 +17,7 @@ export interface GenerateImagePromptStreamArgs {
 interface ImagePromptRequestBody {
   runId: string;
   article: string;
+  preferences?: ImagePromptPreferences;
 }
 
 const isImagePromptRequest = (value: unknown): value is ImagePromptRequestBody =>
@@ -54,6 +56,7 @@ export const handleGenerateImagePromptStream = async ({
     const result = await generateImagePrompt({
       runId: body.runId,
       article: body.article,
+      preferences: normalizeImagePromptPreferences(body.preferences),
       config,
       logger,
       signal,

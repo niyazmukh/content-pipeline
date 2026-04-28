@@ -5,6 +5,7 @@ import type {
   StoryCluster,
   EvidenceItem,
   ImagePromptGenerationResult,
+  ImagePromptPreferences,
   ApiConfigResponse,
   ApiHealthResponse,
   RetrievalMetrics,
@@ -484,13 +485,14 @@ export const generateArticle = async (payload: GenerateArticlePayload, onStageEv
 interface ImagePromptPayload {
   runId: string;
   article: string;
+  preferences?: ImagePromptPreferences;
 }
 
 export const generateImagePrompt = async (payload: ImagePromptPayload, onStageEvent?: (event: StageEvent<unknown>) => void) => {
   const url = `${API_BASE_URL}/generate-image-prompt-stream`;
   return streamSseRequest<ImagePromptGenerationResult>({
     url,
-    body: { runId: payload.runId, article: payload.article },
+    body: { runId: payload.runId, article: payload.article, preferences: payload.preferences },
     headers: buildAuthHeaders(),
     mapResult: (event, value) => {
       if (event === 'stage-event' && isStageEvent(value)) {
@@ -502,6 +504,7 @@ export const generateImagePrompt = async (payload: ImagePromptPayload, onStageEv
               runId,
               slides: data.slides as any,
               prompt: typeof data.prompt === 'string' ? data.prompt : undefined,
+              preferences: payload.preferences,
             };
           }
           if (typeof data.prompt === 'string') {

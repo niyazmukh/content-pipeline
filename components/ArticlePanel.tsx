@@ -75,6 +75,16 @@ const ArticlePanel: React.FC<{
                 <div key={`${slide.title}-${idx}`} className="group relative border border-slate-800 rounded-lg p-4 bg-slate-950/40 hover:bg-slate-950/60 transition overflow-hidden">
                     <div className="absolute top-0 right-0 p-2 opacity-50 text-[10px] font-mono text-slate-500">#{idx + 1}</div>
                     <div className="font-medium text-slate-200 text-sm mb-2 pr-6">{slide.title}</div>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase font-bold tracking-tight">
+                        {slide.visualStrategy.replace(/_/g, ' ')}
+                      </span>
+                      {slide.layout && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 font-medium italic">
+                          {slide.layout}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-slate-400 italic bg-black/20 p-2 rounded border border-white/5">"{slide.prompt}"</div>
                 </div>
             ))}
