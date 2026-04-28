@@ -6,10 +6,15 @@ export interface QueryIntent {
   requiredEntities: string[];
   facets: string[];
   excludeTerms: string[];
+  excludeEntities: string[];
+  excludeLocations: string[];
 }
 
 export interface QueryIntentOptions {
   coreTerms?: string[];
+  excludeTerms?: string[];
+  excludeEntities?: string[];
+  excludeLocations?: string[];
 }
 
 const INSTRUCTION_WORDS = new Set([
@@ -22,6 +27,22 @@ const INSTRUCTION_WORDS = new Set([
   'cover',
   'covering',
   'especially',
+  'ignore',
+  'exclude',
+  'excluding',
+  'without',
+  'except',
+  'company',
+  'companies',
+  'vendor',
+  'vendors',
+  'brand',
+  'brands',
+  'source',
+  'sources',
+  'country',
+  'region',
+  'market',
 ]);
 
 const FACET_SYNONYMS = new Map<string, string>([
@@ -65,6 +86,69 @@ const addUnique = (target: string[], value: string, max = 12) => {
   const clean = value.toLowerCase().replace(/\s+/g, ' ').trim();
   if (!clean || target.includes(clean) || target.length >= max) return;
   target.push(clean);
+};
+
+const stripNegativeCue = (value: string): string =>
+  value
+    .replace(/^(?:company|companies|vendor|vendors|brand|brands|source|sources|publication|publisher|site|country|region|market|news|articles|coverage)\s+/i, '')
+    .replace(/^(?:from|in|about)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const looksLikeLocationExclusion = (prefix: string, value: string): boolean => {
+  const prefixLower = prefix.toLowerCase();
+  const valueLower = value.toLowerCase();
+  return (
+    /\b(?:from|in|country|region|market|geo|location)\b/.test(prefixLower) ||
+    /\b(?:india|indian|china|chinese|europe|european|eu|uk|united kingdom|us|usa|united states|america|american)\b/.test(valueLower)
+  );
+};
+
+const extractNegativeConstraints = (
+  topic: string,
+): { cleanedTopic: string; excludeTerms: string[]; excludeEntities: string[]; excludeLocations: string[] } => {
+  const excludeTerms: string[] = [];
+  const excludeEntities: string[] = [];
+  const excludeLocations: string[] = [];
+  let cleanedTopic = topic;
+
+  const consume = (regex: RegExp, classify: (match: RegExpExecArray) => void) => {
+    cleanedTopic = cleanedTopic.replace(regex, (...args: unknown[]) => {
+      const match = args.slice(0, -2) as string[];
+      classify(match as unknown as RegExpExecArray);
+      return ' ';
+    });
+  };
+
+  consume(
+    /\b(?:ignore|exclude|excluding|without|except)\s+(company|companies|vendor|vendors|brand|brands|source|sources|publication|publisher|site)\s+["']?([A-Za-z0-9][A-Za-z0-9&+.'-]*(?:\s+(?!and\s+(?:ignore|exclude|excluding|without|except)\b)[A-Za-z0-9][A-Za-z0-9&+.'-]*){0,4})["']?(?=\s+(?:and\s+)?(?:ignore|exclude|excluding|without|except)\b|$|[,.);])/gi,
+    (match) => addUnique(excludeEntities, stripNegativeCue(match[2] || ''), 12),
+  );
+
+  consume(
+    /\b(?:ignore|exclude|excluding|without|except)\s+((?:news|articles|coverage|sources?)?\s*(?:from|in|about|country|region|market)\s+)["']?([A-Za-z][A-Za-z\s.'-]{1,50}?)["']?(?=\s+(?:and\s+)?(?:ignore|exclude|excluding|without|except)\b|$|[,.);])/gi,
+    (match) => addUnique(excludeLocations, stripNegativeCue(match[2] || ''), 12),
+  );
+
+  consume(
+    /\b(?:ignore|exclude|excluding|without|except)\s+["']?([^"',.;)]+?)["']?(?=\s+(?:and\s+)?(?:ignore|exclude|excluding|without|except)\b|$|[,.);])/gi,
+    (match) => {
+      const raw = stripNegativeCue(match[1] || '');
+      if (!raw) return;
+      if (looksLikeLocationExclusion(match[1] || '', raw)) {
+        addUnique(excludeLocations, raw, 12);
+      } else {
+        addUnique(excludeTerms, raw, 12);
+      }
+    },
+  );
+
+  return {
+    cleanedTopic: cleanedTopic.replace(/\s+/g, ' ').trim(),
+    excludeTerms,
+    excludeEntities,
+    excludeLocations,
+  };
 };
 
 const extractQuotedPhrases = (topic: string): string[] => {
@@ -130,9 +214,20 @@ const deriveFallbackSubject = (topic: string): string[] => {
 
 export const buildQueryIntent = (topic: string, options: QueryIntentOptions = {}): QueryIntent => {
   const originalTopic = String(topic || '').trim();
-  const quoted = extractQuotedPhrases(originalTopic);
-  const domainPhrases = extractDomainPhrases(originalTopic);
-  let requiredEntities = extractEntities(originalTopic);
+  const extractedNegatives = extractNegativeConstraints(originalTopic);
+  const positiveTopic = extractedNegatives.cleanedTopic || originalTopic;
+  const quoted = extractQuotedPhrases(positiveTopic);
+  const domainPhrases = extractDomainPhrases(positiveTopic);
+  let requiredEntities = extractEntities(positiveTopic);
+  const excludeTerms: string[] = [];
+  const excludeEntities: string[] = [];
+  const excludeLocations: string[] = [];
+  extractedNegatives.excludeTerms.forEach((value) => addUnique(excludeTerms, value, 12));
+  extractedNegatives.excludeEntities.forEach((value) => addUnique(excludeEntities, value, 12));
+  extractedNegatives.excludeLocations.forEach((value) => addUnique(excludeLocations, value, 12));
+  (options.excludeTerms ?? []).forEach((value) => addUnique(excludeTerms, value, 12));
+  (options.excludeEntities ?? []).forEach((value) => addUnique(excludeEntities, value, 12));
+  (options.excludeLocations ?? []).forEach((value) => addUnique(excludeLocations, value, 12));
 
   const subjectPhrases: string[] = [];
   (options.coreTerms ?? []).forEach((term) => {
@@ -145,7 +240,7 @@ export const buildQueryIntent = (topic: string, options: QueryIntentOptions = {}
     addUnique(subjectPhrases, phrase, 10);
   });
   if (!subjectPhrases.length) {
-    deriveFallbackSubject(originalTopic).forEach((phrase) => addUnique(subjectPhrases, phrase, 10));
+    deriveFallbackSubject(positiveTopic).forEach((phrase) => addUnique(subjectPhrases, phrase, 10));
   }
   const subjectTokens = new Set(subjectPhrases.flatMap(tokenize));
   requiredEntities = requiredEntities.filter((entity) => {
@@ -153,13 +248,15 @@ export const buildQueryIntent = (topic: string, options: QueryIntentOptions = {}
     return !(tokens.length === 1 && subjectTokens.has(tokens[0]));
   });
 
-  const facets = extractFacets(originalTopic, subjectPhrases, requiredEntities);
+  const facets = extractFacets(positiveTopic, subjectPhrases, requiredEntities);
 
   return {
     originalTopic,
     subjectPhrases,
     requiredEntities,
     facets,
-    excludeTerms: [],
+    excludeTerms,
+    excludeEntities,
+    excludeLocations,
   };
 };

@@ -3,6 +3,7 @@ import { hashString, randomId } from '../../../shared/crypto';
 import type { ConnectorResult, ConnectorArticle } from '../types';
 import { applyPreFilter } from '../preFilter';
 import { deriveLooseTerms } from '../queryUtils';
+import type { QueryExclusions } from '../exclusions';
 
 const NEWS_API_ENDPOINT = 'https://newsapi.org/v2/everything';
 
@@ -11,6 +12,7 @@ export interface NewsApiConnectorOptions {
   pageSize?: number;
   signal?: AbortSignal;
   recencyHours?: number;
+  exclusions?: QueryExclusions;
 }
 
 const trunc = (value: string | null | undefined) =>
@@ -129,7 +131,7 @@ export const fetchNewsApiCandidates = async (
       rawReturned += pageItems.length;
 
       const filteredPageItems = pageItems.filter((article) => {
-        const decision = applyPreFilter(article.url, article.title, article.snippet ?? null, searchQuery);
+        const decision = applyPreFilter(article.url, article.title, article.snippet ?? null, searchQuery, options.exclusions);
         return decision.pass;
       });
 

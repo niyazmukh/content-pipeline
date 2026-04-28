@@ -9,6 +9,11 @@ export interface TopicAnalysisResult {
   isUrl: boolean;
   mainTopic: string;
   keywords: string[];
+  exclude?: {
+    terms?: string[];
+    entities?: string[];
+    locations?: string[];
+  };
   dateRange?: {
     start?: string;
     end?: string;
@@ -77,6 +82,16 @@ export class TopicAnalysisService {
       if (typeof queries.main !== 'string' || !queries.main.trim()) {
         queries.main = typeof result.mainTopic === 'string' && result.mainTopic.trim() ? result.mainTopic.trim() : input;
       }
+      const rawExclude = (result as any).exclude ?? {};
+      const normalizeList = (value: unknown): string[] | undefined =>
+        Array.isArray(value)
+          ? value.map((entry) => String(entry || '').trim()).filter(Boolean)
+          : undefined;
+      (result as any).exclude = {
+        terms: normalizeList(rawExclude.terms),
+        entities: normalizeList(rawExclude.entities),
+        locations: normalizeList(rawExclude.locations),
+      };
 
       return {
         originalInput: input,
@@ -91,6 +106,11 @@ export class TopicAnalysisService {
         isUrl,
         mainTopic: input.slice(0, 50),
         keywords: input.split(' ').slice(0, 5),
+        exclude: {
+          terms: [],
+          entities: [],
+          locations: [],
+        },
         queries: {
           google: input,
           newsapi: input,

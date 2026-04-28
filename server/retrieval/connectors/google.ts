@@ -2,6 +2,7 @@ import type { AppConfig } from '../../../shared/config';
 import { hashString, randomId } from '../../../shared/crypto';
 import type { ConnectorResult, ConnectorArticle } from '../types';
 import { applyPreFilter } from '../preFilter';
+import type { QueryExclusions } from '../exclusions';
 
 const GOOGLE_SEARCH_ENDPOINT = 'https://customsearch.googleapis.com/customsearch/v1';
 
@@ -9,6 +10,7 @@ export interface GoogleConnectorOptions {
   maxResults?: number;
   signal?: AbortSignal;
   recencyHours?: number;
+  exclusions?: QueryExclusions;
 }
 
 const buildArticleId = (url: string) => hashString(url || randomId());
@@ -250,7 +252,7 @@ export const fetchGoogleCandidates = async (
               return false; // Too old
             }
           }
-          const decision = applyPreFilter(article.url, article.title, article.snippet ?? null, effectiveQuery);
+          const decision = applyPreFilter(article.url, article.title, article.snippet ?? null, effectiveQuery, options.exclusions);
           if (!decision.pass) {
             return false;
           }

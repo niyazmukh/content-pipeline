@@ -19,6 +19,7 @@ The pipeline retrieves candidates from Google CSE, Google News RSS, NewsAPI, and
 Current reliability controls:
 
 - Provider-specific query planning expands a natural-language topic into source-appropriate query variants.
+- Negative topic constraints are first-class: phrases such as `ignore company BigCommerce` or `ignore news from India` are parsed as exclusions, kept out of positive anchors/facets, rendered as provider-specific negative operators where supported, and enforced again during candidate/article filtering.
 - RSS, Google CSE, and NewsAPI report which query variants were tried and which one produced usable results.
 - Evidence scoring favors articles that contain topic anchors, requested facets, named entities, factual density, and usable body text.
 - A source quality gate selects the source set used for clustering and outline generation. Weak, thin, off-topic, or duplicate-domain sources can be rejected before synthesis.
@@ -28,6 +29,12 @@ For broad topics, include the core subject and the desired facets in the topic p
 
 ```text
 Top B2B ecommerce news, focus on market research and reports, regulation, notable case studies and acquisitions.
+```
+
+To exclude an entity, source, term, or location, state it explicitly:
+
+```text
+Top B2B ecommerce news, focus on regulation and acquisitions, ignore company BigCommerce, ignore news from India.
 ```
 
 If the UI shows `Needs Review`, inspect the retrieval diagnostics before generating the final article. The usual fixes are broadening the topic anchor, increasing the recency window, enabling more providers, or rerunning with clearer required facets.

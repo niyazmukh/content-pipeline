@@ -1,6 +1,7 @@
 import type { NormalizedArticle } from './types';
+import { firstMatchingExclusion, type QueryExclusions } from './exclusions';
 
-export interface FilterOptions {
+export interface FilterOptions extends QueryExclusions {
   recencyHours: number;
   minWordCount: number;
   minUniqueWords: number;
@@ -121,6 +122,15 @@ export const evaluateArticle = (article: NormalizedArticle, options: FilterOptio
     if (options.bannedHostPatterns.some((regex) => regex.test(host))) {
       reasons.push('banned_source');
     }
+  }
+
+  const excludedReason = firstMatchingExclusion(
+    `${article.title}\n${article.excerpt}\n${article.body || ''}\n${article.canonicalUrl || ''}\n${article.sourceName || ''}`,
+    article.sourceHost,
+    options,
+  );
+  if (excludedReason) {
+    reasons.push(excludedReason);
   }
 
   if (article.body) {

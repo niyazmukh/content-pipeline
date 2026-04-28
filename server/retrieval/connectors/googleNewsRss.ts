@@ -3,6 +3,7 @@ import { hashString, randomId } from '../../../shared/crypto';
 import type { ConnectorArticle, ConnectorResult } from '../types';
 import { applyPreFilter } from '../preFilter';
 import { isGoogleNewsWrapperUrl } from '../googleNewsWrapper';
+import type { QueryExclusions } from '../exclusions';
 const GOOGLE_NEWS_RSS_ENDPOINT = 'https://news.google.com/rss/search';
 const GOOGLE_NEWS_HOST = 'news.google.com';
 
@@ -10,6 +11,7 @@ export interface GoogleNewsRssConnectorOptions {
   maxResults?: number;
   signal?: AbortSignal;
   recencyHours?: number;
+  exclusions?: QueryExclusions;
 }
 
 const buildArticleId = (url: string) => hashString(url || randomId());
@@ -160,7 +162,7 @@ export const fetchGoogleNewsRssCandidates = async (
       const finalUrl = item.url;
       if (isGoogleNewsWrapperUrl(finalUrl)) wrapperCandidates += 1;
 
-      const decision = applyPreFilter(finalUrl, item.title, item.snippet, effectiveQuery);
+      const decision = applyPreFilter(finalUrl, item.title, item.snippet, effectiveQuery, options.exclusions);
       if (!decision.pass) {
         continue;
       }

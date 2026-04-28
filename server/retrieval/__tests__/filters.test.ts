@@ -73,5 +73,28 @@ describe('evaluateArticle', () => {
     expect(decision.accept).toBe(true);
     expect(decision.warnings).toContain('missing_published_at');
   });
+
+  it('rejects extracted articles that match excluded entities or locations', () => {
+    const entityDecision = evaluateArticle(
+      buildArticle({
+        title: 'BigCommerce releases new B2B ecommerce data',
+        body: 'This article discusses current B2B platform trends with no explicit publication date.',
+      }),
+      { ...baseOptions, excludeEntities: ['BigCommerce'] },
+    );
+    const locationDecision = evaluateArticle(
+      buildArticle({
+        canonicalUrl: 'https://publisher.in/news/2026/04/26/b2b-ecommerce',
+        sourceHost: 'publisher.in',
+        body: 'This article discusses current B2B platform trends with no explicit publication date.',
+      }),
+      { ...baseOptions, excludeLocations: ['India'] },
+    );
+
+    expect(entityDecision.accept).toBe(false);
+    expect(entityDecision.reasons).toContain('excluded_entity');
+    expect(locationDecision.accept).toBe(false);
+    expect(locationDecision.reasons).toContain('excluded_location');
+  });
 });
 

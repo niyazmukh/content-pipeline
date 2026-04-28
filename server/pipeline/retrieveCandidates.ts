@@ -97,11 +97,29 @@ export const retrieveCandidates = async ({
   const runId = providedRunId && providedRunId.trim().length ? providedRunId.trim() : randomId();
   const recencyHours = recencyHoursOverride ?? config.recencyHours;
 
-  let searchQuery: string | { google?: string; newsapi?: string; eventregistry?: string[]; main?: string; coreTerms?: string[] } = topic;
+  let searchQuery:
+    | string
+    | {
+        google?: string;
+        newsapi?: string;
+        eventregistry?: string[];
+        main?: string;
+        coreTerms?: string[];
+        excludeTerms?: string[];
+        excludeEntities?: string[];
+        excludeLocations?: string[];
+      } = topic;
   try {
     const analysisService = new TopicAnalysisService(config, logger);
     const analysis = await analysisService.analyze(topic, signal);
-    searchQuery = { main: topic, coreTerms: analysis.queries.main ? [analysis.queries.main] : undefined, ...analysis.queries };
+    searchQuery = {
+      main: topic,
+      coreTerms: analysis.queries.main ? [analysis.queries.main] : undefined,
+      excludeTerms: analysis.exclude?.terms,
+      excludeEntities: analysis.exclude?.entities,
+      excludeLocations: analysis.exclude?.locations,
+      ...analysis.queries,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('Topic analysis failed; using raw topic', { runId, error: message });
@@ -124,7 +142,13 @@ export const retrieveCandidates = async ({
         : typeof searchQuery.main === 'string' && searchQuery.main !== mainQuery
           ? [searchQuery.main]
           : [];
-  const queryPlan = buildProviderQueryPlan(buildQueryIntent(mainQuery || topic, { coreTerms }));
+  const queryIntent = buildQueryIntent(mainQuery || topic, {
+    coreTerms,
+    excludeTerms: typeof searchQuery === 'string' ? undefined : searchQuery.excludeTerms,
+    excludeEntities: typeof searchQuery === 'string' ? undefined : searchQuery.excludeEntities,
+    excludeLocations: typeof searchQuery === 'string' ? undefined : searchQuery.excludeLocations,
+  });
+  const queryPlan = buildProviderQueryPlan(queryIntent);
 
   const safeFetchConnector = async (
     provider: ProviderName,
@@ -150,16 +174,16 @@ export const retrieveCandidates = async ({
   };
 
   const connectorResults = await Promise.all([
-    safeFetchConnector('google', () => fetchGoogleCandidates(queryPlan.google, config, { signal, recencyHours }), queryPlan.google),
+    safeFetchConnector('google', () => fetchGoogleCandidates(queryPlan.google, config, { signal, recencyHours, exclusions: queryIntent }), queryPlan.google),
     safeFetchConnector(
       'googlenews',
-      () => fetchGoogleNewsRssCandidates(queryPlan.googlenews, config, { signal, recencyHours }),
+      () => fetchGoogleNewsRssCandidates(queryPlan.googlenews, config, { signal, recencyHours, exclusions: queryIntent }),
       queryPlan.googlenews,
     ),
-    safeFetchConnector('newsapi', () => fetchNewsApiCandidates(queryPlan.newsapi, config, { signal, recencyHours }), queryPlan.newsapi),
+    safeFetchConnector('newsapi', () => fetchNewsApiCandidates(queryPlan.newsapi, config, { signal, recencyHours, exclusions: queryIntent }), queryPlan.newsapi),
     safeFetchConnector(
       'eventregistry',
-      () => fetchEventRegistryCandidates(queryPlan.eventregistry, config, { signal, recencyHours }),
+      () => fetchEventRegistryCandidates(queryPlan.eventregistry, config, { signal, recencyHours, exclusions: queryIntent }),
       queryPlan.eventregistry,
     ),
   ]);

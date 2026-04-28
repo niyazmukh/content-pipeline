@@ -67,4 +67,23 @@ describe('query intent and provider query planning', () => {
     expect(plan.newsapi[0]).toContain('"export control"');
     expect(plan.googlenews[0]).toBe('"ai chip" OR "nvidia" OR "amd"');
   });
+
+  it('keeps explicit negative constraints out of positive facets and renders provider exclusions', () => {
+    const intent = buildQueryIntent(
+      'Top B2B ecommerce news (focus on market research and regulation), ignore company BigCommerce and ignore news from India.',
+    );
+    const plan = buildProviderQueryPlan(intent);
+
+    expect(intent.subjectPhrases).toEqual(['b2b ecommerce', 'b2b e-commerce']);
+    expect(intent.excludeEntities).toContain('bigcommerce');
+    expect(intent.excludeLocations).toContain('india');
+    expect(intent.facets).not.toContain('bigcommerce');
+    expect(intent.facets).not.toContain('india');
+    expect(plan.google[0]).toContain('-"bigcommerce"');
+    expect(plan.google[0]).toContain('-"india"');
+    expect(plan.googlenews[0]).toContain('-"bigcommerce"');
+    expect(plan.newsapi[0]).toContain('AND NOT ("bigcommerce" OR "india")');
+    expect(plan.eventregistry).not.toContain('bigcommerce');
+    expect(plan.eventregistry).not.toContain('india');
+  });
 });

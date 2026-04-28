@@ -2,6 +2,7 @@ import type { AppConfig } from '../../../shared/config';
 import { hashString, randomId } from '../../../shared/crypto';
 import type { ConnectorResult, ConnectorArticle } from '../types';
 import { applyPreFilter } from '../preFilter';
+import type { QueryExclusions } from '../exclusions';
 
 const EVENT_REGISTRY_ENDPOINT = 'https://eventregistry.org/api/v1/article/getArticles';
 
@@ -23,6 +24,7 @@ export interface EventRegistryConnectorOptions {
   maxArticles?: number;
   signal?: AbortSignal;
   recencyHours?: number;
+  exclusions?: QueryExclusions;
 }
 
 const normalizeKeywords = (rawQuery: string): string[] => {
@@ -420,7 +422,7 @@ export const fetchEventRegistryCandidates = async (
               return null;
             }
 
-            const decision = applyPreFilter(candidate.url, candidate.title, candidate.snippet ?? null, rawQueryString);
+            const decision = applyPreFilter(candidate.url, candidate.title, candidate.snippet ?? null, rawQueryString, options.exclusions);
             if (!decision.pass) {
               return null;
             }

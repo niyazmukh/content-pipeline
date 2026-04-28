@@ -4,6 +4,7 @@
  */
 
 import { tokenizeForRelevance } from './queryUtils';
+import { firstMatchingExclusion, type QueryExclusions } from './exclusions';
 
 /**
  * Banned URL path patterns that typically don't contain article content.
@@ -100,6 +101,8 @@ export interface PreFilterResult {
   reason?: string;
 }
 
+export type PreFilterOptions = QueryExclusions;
+
 /**
  * Apply light pre-filtering to a candidate article.
  * Returns { pass: true } if the item should be kept, or { pass: false, reason } if it should be filtered.
@@ -109,6 +112,7 @@ export const applyPreFilter = (
   title: string | null,
   snippet: string | null,
   query: string,
+  options: PreFilterOptions = {},
 ): PreFilterResult => {
   // Check URL
   if (!url || url.trim().length === 0) {
@@ -161,6 +165,11 @@ export const applyPreFilter = (
   const snippetText = (snippet || '').trim();
   if (snippetText.length < MIN_SNIPPET_LENGTH) {
     return { pass: false, reason: 'snippet_too_short' };
+  }
+
+  const excludedReason = firstMatchingExclusion(`${titleText} ${snippetText} ${url}`, parsedUrl?.hostname ?? null, options);
+  if (excludedReason) {
+    return { pass: false, reason: excludedReason };
   }
 
   // Quick relevance check

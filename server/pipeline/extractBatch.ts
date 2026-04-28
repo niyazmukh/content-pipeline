@@ -5,6 +5,7 @@ import { extractArticle } from '../retrieval/extraction';
 import { GOOGLE_NEWS_WRAPPER_SKIP_ERROR } from '../retrieval/extraction';
 import { evaluateArticle } from '../retrieval/filters';
 import { tokenizeForRelevance } from '../retrieval/queryUtils';
+import { buildQueryIntent } from '../retrieval/queryIntent';
 import { isGoogleNewsWrapperUrl } from '../retrieval/googleNewsWrapper';
 import type { ProviderName, NormalizedArticle } from '../retrieval/types';
 import type { RetrievalCandidate, RetrievalProviderMetrics } from '../../shared/types';
@@ -62,6 +63,7 @@ export const extractBatch = async ({
   const deadlineAt = Date.now() + Math.max(1, config.retrieval.totalBudgetMs || 1);
 
   const queryTokens = tokenizeForRelevance(mainQuery, { maxTokens: 24 });
+  const queryIntent = buildQueryIntent(mainQuery);
   const filterOptions = {
     recencyHours,
     minWordCount: 150,
@@ -69,6 +71,9 @@ export const extractBatch = async ({
     minRelevance: 0.1,
     bannedHostPatterns: [] as RegExp[],
     maxPromoPhraseMatches: 2,
+    excludeTerms: queryIntent.excludeTerms,
+    excludeEntities: queryIntent.excludeEntities,
+    excludeLocations: queryIntent.excludeLocations,
   };
 
   const providerMetrics = initProviderMetrics();

@@ -238,10 +238,16 @@ Current Date: {CURRENT_DATE}
    - Example: for "Top B2B ecommerce news (focus on market research, regulation, case studies and acquisitions)", core searchable elements are ["b2b ecommerce", "b2b e-commerce"].
    - Do NOT include facets such as "market research", "reports", "regulation", "case studies", or "acquisitions" as core searchable elements unless they are the actual subject.
 3) Extract keywords: identify 3-5 specific, high-value keywords or entities. Avoid generic words and stopwords.
-4) Generate provider-specific queries:
+4) Extract negative constraints separately:
+   - If the user asks to ignore/exclude/avoid a company, source, location, country, region, market, or term, put it ONLY in "exclude".
+   - Do NOT include excluded entities or locations in mainTopic, keywords, anchors, or positive provider queries except as NOT / exclusion operators where the provider supports them.
+   - Examples:
+     - "ignore company BigCommerce" -> "exclude.entities": ["BigCommerce"]
+     - "ignore news from India" -> "exclude.locations": ["India"]
+5) Generate provider-specific queries:
    - Google CSE:
      - Keyword-centric. Use quotes ONLY for proper nouns / named entities (e.g., "European Union").
-     - Use OR for synonyms or alternate terms. Avoid long sentences. Target <= ~32 words.
+     - Use OR for synonyms or alternate terms. Use -"term" for explicit exclusions. Avoid long sentences. Target <= ~32 words.
    - NewsAPI (q parameter):
      - Use ONLY boolean operators AND / OR / NOT, parentheses, and quotes for exact phrases.
      - Do NOT use Google-style operators such as site:, filetype:, or "-" exclusions.
@@ -255,6 +261,11 @@ Current Date: {CURRENT_DATE}
 {
   "mainTopic": "Short descriptive topic label",
   "keywords": ["keyword1", "keyword2", "keyword3"],
+  "exclude": {
+    "terms": [],
+    "entities": [],
+    "locations": []
+  },
   "queries": {
     "main": "core searchable subject only, no facets or instructions",
     "google": "optimized query string for Google",

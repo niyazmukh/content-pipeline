@@ -80,7 +80,18 @@ const uniquenessKey = (url: string): string => {
 
 export const retrieveUnified = async (
   runId: string,
-  query: string | { main?: string; coreTerms?: string[]; google?: string; newsapi?: string; eventregistry?: string[] },
+  query:
+    | string
+    | {
+        main?: string;
+        coreTerms?: string[];
+        google?: string;
+        newsapi?: string;
+        eventregistry?: string[];
+        excludeTerms?: string[];
+        excludeEntities?: string[];
+        excludeLocations?: string[];
+      },
   config: AppConfig,
   options: RetrievalOrchestratorOptions,
 ): Promise<RetrievalOrchestratorResult> => {
@@ -122,7 +133,12 @@ export const retrieveUnified = async (
         : typeof query.main === 'string' && query.main !== mainQueryString
           ? [query.main]
           : [];
-  const queryIntent = buildQueryIntent(mainQueryString, { coreTerms });
+  const queryIntent = buildQueryIntent(mainQueryString, {
+    coreTerms,
+    excludeTerms: typeof query === 'string' ? undefined : query.excludeTerms,
+    excludeEntities: typeof query === 'string' ? undefined : query.excludeEntities,
+    excludeLocations: typeof query === 'string' ? undefined : query.excludeLocations,
+  });
   const queryPlan = buildProviderQueryPlan(queryIntent);
   const queryTokens = tokenizeForRelevance(mainQueryString, { maxTokens: 24 });
 
@@ -133,6 +149,9 @@ export const retrieveUnified = async (
     minRelevance: 0.1,
     bannedHostPatterns: [] as RegExp[],
     maxPromoPhraseMatches: 2,
+    excludeTerms: queryIntent.excludeTerms,
+    excludeEntities: queryIntent.excludeEntities,
+    excludeLocations: queryIntent.excludeLocations,
   };
 
   try {
@@ -161,16 +180,16 @@ export const retrieveUnified = async (
 
     const [google, googleNews, newsapi, eventRegistry] = await Promise.all([
       safeFetchConnector('google', () =>
-        fetchGoogleCandidates(queryPlan.google, config, { signal: controller.signal, recencyHours }), queryPlan.google
+        fetchGoogleCandidates(queryPlan.google, config, { signal: controller.signal, recencyHours, exclusions: queryIntent }), queryPlan.google
       ),
       safeFetchConnector('googlenews', () =>
-        fetchGoogleNewsRssCandidates(queryPlan.googlenews, config, { signal: controller.signal, recencyHours }), queryPlan.googlenews
+        fetchGoogleNewsRssCandidates(queryPlan.googlenews, config, { signal: controller.signal, recencyHours, exclusions: queryIntent }), queryPlan.googlenews
       ),
       safeFetchConnector('newsapi', () =>
-        fetchNewsApiCandidates(queryPlan.newsapi, config, { signal: controller.signal, recencyHours }), queryPlan.newsapi
+        fetchNewsApiCandidates(queryPlan.newsapi, config, { signal: controller.signal, recencyHours, exclusions: queryIntent }), queryPlan.newsapi
       ),
       safeFetchConnector('eventregistry', () =>
-        fetchEventRegistryCandidates(queryPlan.eventregistry, config, { signal: controller.signal, recencyHours }), queryPlan.eventregistry
+        fetchEventRegistryCandidates(queryPlan.eventregistry, config, { signal: controller.signal, recencyHours, exclusions: queryIntent }), queryPlan.eventregistry
       ),
     ]);
 
