@@ -88,6 +88,12 @@ const addUnique = (target: string[], value: string, max = 12) => {
   target.push(clean);
 };
 
+const splitNegativeList = (value: string): string[] =>
+  value
+    .split(/\s*,\s*|\s+and\s+/i)
+    .map((entry) => stripNegativeCue(entry).replace(/^["']|["']$/g, '').trim())
+    .filter(Boolean);
+
 const stripNegativeCue = (value: string): string =>
   value
     .replace(/^(?:company|companies|vendor|vendors|brand|brands|source|sources|publication|publisher|site|country|region|market|news|articles|coverage)\s+/i, '')
@@ -119,6 +125,21 @@ const extractNegativeConstraints = (
       return ' ';
     });
   };
+
+  consume(
+    /\b(?:ignore|exclude|excluding|without|except)\s+(companies|company|vendors|vendor|brands|brand|sources|source|publications|publishers|sites)\s*:\s*([^.;)]+)/gi,
+    (match) => splitNegativeList(match[2] || '').forEach((value) => addUnique(excludeEntities, value, 12)),
+  );
+
+  consume(
+    /\b(?:ignore|exclude|excluding|without|except)\s+(countries|country|regions|region|markets|market|locations|location)\s*:\s*([^.;)]+)/gi,
+    (match) => splitNegativeList(match[2] || '').forEach((value) => addUnique(excludeLocations, value, 12)),
+  );
+
+  consume(
+    /\b(?:ignore|exclude|excluding|without|except)\s+(terms|term|topics|topic|keywords|keyword)\s*:\s*([^.;)]+)/gi,
+    (match) => splitNegativeList(match[2] || '').forEach((value) => addUnique(excludeTerms, value, 12)),
+  );
 
   consume(
     /\b(?:ignore|exclude|excluding|without|except)\s+(company|companies|vendor|vendors|brand|brands|source|sources|publication|publisher|site)\s+["']?([A-Za-z0-9][A-Za-z0-9&+.'-]*(?:\s+(?!and\s+(?:ignore|exclude|excluding|without|except)\b)[A-Za-z0-9][A-Za-z0-9&+.'-]*){0,4})["']?(?=\s+(?:and\s+)?(?:ignore|exclude|excluding|without|except)\b|$|[,.);])/gi,

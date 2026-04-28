@@ -137,11 +137,29 @@ export const handleRunOutlineStream = async ({
   let currentStage = retrievalStage;
 
   try {
-    let searchQuery: string | { main: string; coreTerms?: string[]; google: string; newsapi: string; eventregistry: string[] } = topic;
+    let searchQuery:
+      | string
+      | {
+          main: string;
+          coreTerms?: string[];
+          google: string;
+          newsapi: string;
+          eventregistry: string[];
+          excludeTerms?: string[];
+          excludeEntities?: string[];
+          excludeLocations?: string[];
+        } = topic;
     try {
       const analysisService = new TopicAnalysisService(config, logger);
       const analysis = await analysisService.analyze(topic, signal);
-      searchQuery = { main: topic, coreTerms: analysis.queries.main ? [analysis.queries.main] : undefined, ...analysis.queries };
+      searchQuery = {
+        ...analysis.queries,
+        main: topic,
+        coreTerms: analysis.queries.main ? [analysis.queries.main] : undefined,
+        excludeTerms: analysis.exclude?.terms,
+        excludeEntities: analysis.exclude?.entities,
+        excludeLocations: analysis.exclude?.locations,
+      };
       logger.info('Topic analysis result', { runId, analysis });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -103,6 +103,9 @@ export const performTargetedResearch = async ({
   const queryMap = {
     main: baselineQuery,
     coreTerms: analysis.queries.main ? [analysis.queries.main] : undefined,
+    excludeTerms: analysis.exclude?.terms,
+    excludeEntities: analysis.exclude?.entities,
+    excludeLocations: analysis.exclude?.locations,
     google: analysis.queries.google || baselineQuery,
     newsapi: analysis.queries.newsapi || baselineQuery,
     eventregistry:

@@ -86,4 +86,23 @@ describe('query intent and provider query planning', () => {
     expect(plan.eventregistry).not.toContain('bigcommerce');
     expect(plan.eventregistry).not.toContain('india');
   });
+
+  it('keeps original-topic facets when LLM core terms and colon-list exclusions are present', () => {
+    const intent = buildQueryIntent(
+      'Top B2B ecommerce news (focus on market research and reports, regulation, notable case studies and acquisitions). Ignore companies: BigCommerce, OroCommerce, Shopify. Ignore countries: India, Bangladesh, Pakistan.',
+      { coreTerms: ['b2b ecommerce news', 'b2b ecommerce', 'b2b e-commerce'] },
+    );
+    const plan = buildProviderQueryPlan(intent);
+
+    expect(intent.subjectPhrases).toEqual(['b2b ecommerce news', 'b2b ecommerce', 'b2b e-commerce']);
+    expect(intent.facets).toEqual(expect.arrayContaining(['market research', 'reports', 'regulation', 'case studies', 'acquisitions']));
+    expect(intent.excludeEntities).toEqual(expect.arrayContaining(['bigcommerce', 'orocommerce', 'shopify']));
+    expect(intent.excludeLocations).toEqual(expect.arrayContaining(['india', 'bangladesh', 'pakistan']));
+    expect(plan.google[0]).toContain('("b2b ecommerce news" OR "b2b ecommerce" OR "b2b e-commerce")');
+    expect(plan.google[0]).toContain('("market research" OR "reports" OR "regulation" OR "case studies" OR "acquisitions")');
+    expect(plan.newsapi[0]).toContain('AND ("market research" OR "reports" OR "regulation" OR "case studies" OR "acquisitions")');
+    expect(plan.eventregistry).toEqual(
+      expect.arrayContaining(['b2b ecommerce', 'b2b e-commerce', 'market research', 'regulation', 'case studies']),
+    );
+  });
 });

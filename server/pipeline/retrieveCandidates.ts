@@ -113,12 +113,12 @@ export const retrieveCandidates = async ({
     const analysisService = new TopicAnalysisService(config, logger);
     const analysis = await analysisService.analyze(topic, signal);
     searchQuery = {
+      ...analysis.queries,
       main: topic,
       coreTerms: analysis.queries.main ? [analysis.queries.main] : undefined,
       excludeTerms: analysis.exclude?.terms,
       excludeEntities: analysis.exclude?.entities,
       excludeLocations: analysis.exclude?.locations,
-      ...analysis.queries,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
