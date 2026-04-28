@@ -1,5 +1,5 @@
 import type { NormalizedArticle } from './types';
-import { firstMatchingExclusion, type QueryExclusions } from './exclusions';
+import { firstMatchingFocusedExclusion, type QueryExclusions } from './exclusions';
 
 export interface FilterOptions extends QueryExclusions {
   recencyHours: number;
@@ -124,9 +124,15 @@ export const evaluateArticle = (article: NormalizedArticle, options: FilterOptio
     }
   }
 
-  const excludedReason = firstMatchingExclusion(
-    `${article.title}\n${article.excerpt}\n${article.body || ''}\n${article.canonicalUrl || ''}\n${article.sourceName || ''}`,
-    article.sourceHost,
+  const excludedReason = firstMatchingFocusedExclusion(
+    {
+      title: article.title,
+      excerpt: article.excerpt,
+      body: article.body,
+      url: article.canonicalUrl,
+      sourceName: article.sourceName,
+      host: article.sourceHost,
+    },
     options,
   );
   if (excludedReason) {

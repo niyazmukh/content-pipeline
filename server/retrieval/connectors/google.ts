@@ -55,7 +55,7 @@ const isClearlyNonNewsHost = (host: string): boolean => {
   return false;
 };
 
-const looksLikeNewsArticleUrl = (rawUrl: string): boolean => {
+export const looksLikeNewsArticleUrl = (rawUrl: string): boolean => {
   try {
     const parsed = new URL(rawUrl);
     const host = parsed.hostname.toLowerCase();
@@ -71,6 +71,8 @@ const looksLikeNewsArticleUrl = (rawUrl: string): boolean => {
 
     // Section heuristics: accept common news sections.
     const sectionSignals = [
+      '/article',
+      '/articles',
       '/news',
       '/business',
       '/technology',
@@ -86,8 +88,13 @@ const looksLikeNewsArticleUrl = (rawUrl: string): boolean => {
       '/logistics',
       '/press',
       '/press-release',
+      '/market-report',
+      '/market-reports',
     ];
     if (sectionSignals.some((seg) => path.includes(seg))) return true;
+
+    if (/\bmarket[-/]reports?\b/.test(path)) return true;
+    if (/\b[a-z0-9-]+-market-\d{4,}\b/.test(path)) return true;
 
     return false;
   } catch {

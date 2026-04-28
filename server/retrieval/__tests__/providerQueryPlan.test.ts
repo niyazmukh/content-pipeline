@@ -79,10 +79,10 @@ describe('query intent and provider query planning', () => {
     expect(intent.excludeLocations).toContain('india');
     expect(intent.facets).not.toContain('bigcommerce');
     expect(intent.facets).not.toContain('india');
-    expect(plan.google[0]).toContain('-"bigcommerce"');
-    expect(plan.google[0]).toContain('-"india"');
-    expect(plan.googlenews[0]).toContain('-"bigcommerce"');
-    expect(plan.newsapi[0]).toContain('AND NOT ("bigcommerce" OR "india")');
+    expect(plan.google.join(' ')).not.toContain('-"bigcommerce"');
+    expect(plan.google.join(' ')).not.toContain('-"india"');
+    expect(plan.googlenews.join(' ')).not.toContain('-"bigcommerce"');
+    expect(plan.newsapi.join(' ')).not.toContain('AND NOT ("bigcommerce" OR "india")');
     expect(plan.eventregistry).not.toContain('bigcommerce');
     expect(plan.eventregistry).not.toContain('india');
   });
@@ -100,6 +100,9 @@ describe('query intent and provider query planning', () => {
     expect(intent.excludeLocations).toEqual(expect.arrayContaining(['india', 'bangladesh', 'pakistan']));
     expect(plan.google[0]).toContain('("b2b ecommerce news" OR "b2b ecommerce" OR "b2b e-commerce")');
     expect(plan.google[0]).toContain('("market research" OR "reports" OR "regulation" OR "case studies" OR "acquisitions")');
+    expect(plan.google).toContain(
+      '("b2b ecommerce news" OR "b2b ecommerce" OR "b2b e-commerce") ("market report" OR "market research" OR "report")',
+    );
     expect(plan.newsapi[0]).toContain('AND ("market research" OR "reports" OR "regulation" OR "case studies" OR "acquisitions")');
     expect(plan.eventregistry).toEqual(
       expect.arrayContaining(['b2b ecommerce', 'b2b e-commerce', 'market research', 'regulation', 'case studies']),

@@ -35,8 +35,7 @@ const anchorsFor = (intent: QueryIntent): string[] => {
 
 const facetsFor = (intent: QueryIntent): string[] => unique(intent.facets, 6);
 
-const exclusionsFor = (intent: QueryIntent): string[] =>
-  unique([...intent.excludeEntities, ...intent.excludeLocations, ...intent.excludeTerms], 8);
+const exclusionsFor = (intent: QueryIntent): string[] => unique(intent.excludeTerms, 8);
 
 const renderGoogleExclusions = (exclusions: string[]): string =>
   exclusions.length ? ` ${exclusions.map((value) => `-${quote(value)}`).join(' ')}` : '';
@@ -44,12 +43,22 @@ const renderGoogleExclusions = (exclusions: string[]): string =>
 const renderNewsApiExclusions = (exclusions: string[]): string =>
   exclusions.length ? ` AND NOT (${renderOrGroup(exclusions)})` : '';
 
+const marketReportFacets = (facets: string[]): string[] => {
+  const lowerFacets = new Set(facets.map((facet) => facet.toLowerCase()));
+  if (!lowerFacets.has('market research') && !lowerFacets.has('reports')) return [];
+  return unique(['market report', 'market research', 'report'], 4);
+};
+
 const renderGoogleQueries = (anchors: string[], facets: string[], exclusions: string[]): string[] => {
   const anchorGroup = renderOrGroup(anchors);
   const negative = renderGoogleExclusions(exclusions);
   if (!facets.length) return [`${anchorGroup}${negative}`];
   const facetGroup = renderOrGroup(facets);
-  return unique([`(${anchorGroup}) (${facetGroup})${negative}`, `${anchorGroup}${negative}`], 3);
+  const reportFacets = marketReportFacets(facets);
+  const reportVariant = reportFacets.length
+    ? `(${anchorGroup}) (${renderOrGroup(reportFacets)})${negative}`
+    : null;
+  return unique([`(${anchorGroup}) (${facetGroup})${negative}`, reportVariant ?? '', `${anchorGroup}${negative}`], 4);
 };
 
 const renderGoogleNewsQueries = (anchors: string[], facets: string[], exclusions: string[]): string[] => {
@@ -67,7 +76,11 @@ const renderNewsApiQueries = (anchors: string[], facets: string[], exclusions: s
   const negative = renderNewsApiExclusions(exclusions);
   if (!facets.length) return [`${anchorGroup}${negative}`];
   const facetGroup = renderOrGroup(facets);
-  return unique([`(${anchorGroup}) AND (${facetGroup})${negative}`, `(${anchorGroup})${negative}`], 3);
+  const reportFacets = marketReportFacets(facets);
+  const reportVariant = reportFacets.length
+    ? `(${anchorGroup}) AND (${renderOrGroup(reportFacets)})${negative}`
+    : null;
+  return unique([`(${anchorGroup}) AND (${facetGroup})${negative}`, reportVariant ?? '', `(${anchorGroup})${negative}`], 4);
 };
 
 export const buildProviderQueryPlan = (intentOrTopic: QueryIntent | string): ProviderQueryPlan => {

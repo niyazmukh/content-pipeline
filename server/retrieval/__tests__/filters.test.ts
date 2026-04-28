@@ -96,5 +96,50 @@ describe('evaluateArticle', () => {
     expect(locationDecision.accept).toBe(false);
     expect(locationDecision.reasons).toContain('excluded_location');
   });
+
+  it('does not reject global market reports for body-only excluded company or country mentions', () => {
+    const decision = evaluateArticle(
+      buildArticle({
+        title: 'B2B ecommerce market report tracks global platform adoption',
+        canonicalUrl: 'https://example.com/reports/b2b-ecommerce-market',
+        sourceHost: 'example.com',
+        excerpt: 'A global market research report covers B2B ecommerce growth, regulation, and platform adoption.',
+        body: [
+          'The report covers global B2B ecommerce market research, regulation, case studies, and acquisitions.',
+          'Regional segmentation includes North America, Europe, China, India, Bangladesh, and Pakistan.',
+          'The vendor appendix lists Adobe, Salesforce, Shopify, BigCommerce, and other platform providers.',
+        ].join(' '),
+      }),
+      { ...baseOptions, excludeEntities: ['BigCommerce', 'Shopify'], excludeLocations: ['India', 'Bangladesh', 'Pakistan'] },
+    );
+
+    expect(decision.accept).toBe(true);
+    expect(decision.reasons).not.toContain('excluded_entity');
+    expect(decision.reasons).not.toContain('excluded_location');
+  });
+
+  it('rejects excluded companies and countries when they are the article focus', () => {
+    const companyDecision = evaluateArticle(
+      buildArticle({
+        title: 'Shopify expands B2B ecommerce platform for enterprise sellers',
+        body: 'Shopify announced new B2B ecommerce features for enterprise sellers.',
+      }),
+      { ...baseOptions, excludeEntities: ['Shopify'] },
+    );
+    const countryDecision = evaluateArticle(
+      buildArticle({
+        title: 'India B2B ecommerce regulation changes procurement rules',
+        canonicalUrl: 'https://example.com/news/india-b2b-ecommerce-regulation',
+        sourceHost: 'example.com',
+        body: 'India regulators changed B2B ecommerce procurement rules this week.',
+      }),
+      { ...baseOptions, excludeLocations: ['India'] },
+    );
+
+    expect(companyDecision.accept).toBe(false);
+    expect(companyDecision.reasons).toContain('excluded_entity');
+    expect(countryDecision.accept).toBe(false);
+    expect(countryDecision.reasons).toContain('excluded_location');
+  });
 });
 

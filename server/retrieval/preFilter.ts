@@ -4,7 +4,7 @@
  */
 
 import { tokenizeForRelevance } from './queryUtils';
-import { firstMatchingExclusion, type QueryExclusions } from './exclusions';
+import { firstMatchingFocusedExclusion, type QueryExclusions } from './exclusions';
 
 /**
  * Banned URL path patterns that typically don't contain article content.
@@ -167,7 +167,10 @@ export const applyPreFilter = (
     return { pass: false, reason: 'snippet_too_short' };
   }
 
-  const excludedReason = firstMatchingExclusion(`${titleText} ${snippetText} ${url}`, parsedUrl?.hostname ?? null, options);
+  const excludedReason = firstMatchingFocusedExclusion(
+    { title: titleText, excerpt: snippetText, url, host: parsedUrl?.hostname ?? null },
+    options,
+  );
   if (excludedReason) {
     return { pass: false, reason: excludedReason };
   }

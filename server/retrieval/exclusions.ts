@@ -4,6 +4,15 @@ export interface QueryExclusions {
   excludeLocations?: string[];
 }
 
+export interface ExclusionMatchInput {
+  title?: string | null;
+  excerpt?: string | null;
+  body?: string | null;
+  url?: string | null;
+  sourceName?: string | null;
+  host?: string | null;
+}
+
 const normalizeList = (values: string[] | undefined): string[] => {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -62,5 +71,40 @@ export const firstMatchingExclusion = (
   for (const term of normalizeList(exclusions.excludeTerms)) {
     if (phrasePattern(term).test(haystack)) return 'excluded_term';
   }
+  return null;
+};
+
+const focusText = (input: ExclusionMatchInput): string =>
+  [
+    input.title ?? '',
+    input.excerpt ?? '',
+    input.sourceName ?? '',
+    input.url ?? '',
+    (input.body ?? '').slice(0, 700),
+  ].join(' ');
+
+const strictIdentityText = (input: ExclusionMatchInput): string =>
+  [input.title ?? '', input.sourceName ?? '', input.url ?? ''].join(' ');
+
+export const firstMatchingFocusedExclusion = (
+  input: ExclusionMatchInput,
+  exclusions: QueryExclusions = {},
+): string | null => {
+  const identity = strictIdentityText(input).toLowerCase();
+  const focus = focusText(input).toLowerCase();
+
+  for (const entity of normalizeList(exclusions.excludeEntities)) {
+    if (phrasePattern(entity).test(identity)) return 'excluded_entity';
+  }
+
+  for (const location of normalizeList(exclusions.excludeLocations)) {
+    if (input.host && hostMatchesLocation(input.host, location)) return 'excluded_location';
+    if (locationAliases(location).some((alias) => phrasePattern(alias).test(identity))) return 'excluded_location';
+  }
+
+  for (const term of normalizeList(exclusions.excludeTerms)) {
+    if (phrasePattern(term).test(focus)) return 'excluded_term';
+  }
+
   return null;
 };
