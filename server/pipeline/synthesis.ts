@@ -59,6 +59,7 @@ const buildRepairInstruction = (errors: string[]): string =>
   [
     'Previous article was invalid. Fix every issue below:',
     ...errors.map((error, index) => `${index + 1}. ${error}`),
+    'If a promotion-policy issue is listed, rewrite the affected sentence as a neutral reported fact. Do not use imperatives, invitations, offers, discounts, trials, demos, subscriptions, or direct reader actions.',
   ].join('\n');
 
 const buildKeyDevelopmentsSection = (sourceCatalog: SourceRecord[], options: { min: number; max: number }) => {

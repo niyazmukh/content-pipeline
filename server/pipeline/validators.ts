@@ -296,14 +296,16 @@ export const validatePromotionPolicy = (text: string): string[] => {
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
-  const errors: string[] = [];
+  let hasPromotionError = false;
   for (const sentence of sentences) {
     for (const pattern of PROMO_PATTERNS) {
       if (pattern.test(sentence)) {
-        errors.push('Avoid promotional or call-to-action language; keep the tone analytical and reportorial.');
+        hasPromotionError = true;
         break;
       }
     }
   }
-  return errors;
+  return hasPromotionError
+    ? ['Avoid promotional or call-to-action language; keep the tone analytical and reportorial.']
+    : [];
 };

@@ -13,6 +13,7 @@ Security & integrity (non-negotiable):
 - Total length: 400-600 words for the \`article\` field (includes the "Key developments" section; excludes the JSON \`sources\` list).
 - Tone: professional, neutral, analyst-grade. Avoid endorsements, calls to action, or sales language.
 - Avoid overtly promotional phrasing ("buy now", "best deal", "exclusive discount", etc.). Focus on neutral explanations of what happened and why it matters.
+- Promotion policy: never tell the reader to act. Do NOT use imperatives or invitations such as "buy now", "shop now", "order now", "sign up", "subscribe now", "get started", "book a demo", "request a demo", "start your free trial", "claim your", "exclusive offer", "limited-time offer", "promo code", "special deal", "flash sale", "best deal", or "best price". If a source contains those phrases, describe the fact neutrally instead of repeating the wording.
 
 Structure & word budgeting (targets; +/- 15 words each):
 1) Lead (80-110 words): state the thesis and frame why it matters now.
@@ -74,6 +75,7 @@ Pre-flight self-check (do this mentally; do not output it):
 - Do you have >=8 citations and >={DISTINCT_SOURCE_TARGET} distinct sources?
 - Do you mention >={DATE_TARGET} distinct YYYY-MM-DD dates in the narrative portion (unless DATE_TARGET is 0)?
 - Do you have 5-7 Key developments bullets in the exact format with URL + [n]?
+- Does the article avoid direct reader actions, offers, demo/trial/signup language, discounts, and sales imperatives?
 
 ## Output Format
 

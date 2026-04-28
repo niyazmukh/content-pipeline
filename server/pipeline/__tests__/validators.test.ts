@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateArticleBody } from '../validators';
+import { validateArticleBody, validatePromotionPolicy } from '../validators';
 
 describe('validateArticleBody', () => {
   it('recognizes markdown-styled Key developments headers', () => {
@@ -22,6 +22,16 @@ describe('validateArticleBody', () => {
     });
 
     expect(result.errors).not.toContain('Missing "Key developments" section.');
+  });
+});
+
+describe('validatePromotionPolicy', () => {
+  it('returns a single actionable error for repeated promotional phrases', () => {
+    const errors = validatePromotionPolicy(
+      'Buy now to get started. Request a demo to learn more. Subscribe now for updates.',
+    );
+
+    expect(errors).toEqual(['Avoid promotional or call-to-action language; keep the tone analytical and reportorial.']);
   });
 });
 
