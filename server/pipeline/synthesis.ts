@@ -14,6 +14,7 @@ import {
 } from './validators';
 import type { EvidenceItem } from './types';
 import { describeRecencyWindow } from '../utils/text';
+import { replacePlaceholders } from '../utils/promptHydration';
 
 export interface ArticleSynthesisArgs {
   runId: string;
@@ -109,6 +110,28 @@ const replaceOrAppendKeyDevelopments = (article: string, keyDevSection: string):
   }
   const before = lines.slice(0, idx).join('\n').trimEnd();
   return `${before}\n\n${keyDevSection}\n`;
+};
+
+const ARTICLE_RESPONSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    article: { type: 'string' },
+    sources: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'number' },
+          title: { type: 'string' },
+          url: { type: 'string' },
+        },
+        required: ['id', 'title', 'url'],
+      },
+    },
+    wordCount: { type: 'number' },
+  },
+  required: ['title', 'article', 'sources', 'wordCount'],
 };
 
 export const synthesizeArticle = async ({
@@ -263,28 +286,26 @@ export const synthesizeArticle = async ({
         ? promptTemplate
         : `${promptTemplate}\n\n${buildRepairInstruction(errors)}`;
 
-    const hydratedPrompt = prompt
-      .replaceAll('{RECENCY_WINDOW}', recencyWindow)
-      .replaceAll('{DATE_TARGET}', String(narrativeDateTarget))
-      .replaceAll('{DISTINCT_SOURCE_TARGET}', String(distinctSourceTarget))
-      .replace('{TOPIC}', topic)
-      .replace('{OUTLINE}', outlineJson)
-      .replace('{EVIDENCE}', evidenceText)
-      .replace('{SOURCES}', sourcesJson)
-      .replace('{AVAILABLE_DATES}', availableDatesText)
-      .replace('{PREVIOUS}', prevArticle);
+    const hydratedPrompt = replacePlaceholders(prompt, {
+      '{RECENCY_WINDOW}': recencyWindow,
+      '{DATE_TARGET}': String(narrativeDateTarget),
+      '{DISTINCT_SOURCE_TARGET}': String(distinctSourceTarget),
+      '{TOPIC}': topic,
+      '{OUTLINE}': outlineJson,
+      '{EVIDENCE}': evidenceText,
+      '{SOURCES}': sourcesJson,
+      '{AVAILABLE_DATES}': availableDatesText,
+      '{PREVIOUS}': prevArticle,
+    });
 
     logger.info('Generating article', { runId, attempt });
 
     let parsed: any;
     try {
       parsed = await llmService.generateAndParse(hydratedPrompt, {
-        fallbackToText: true,
         maxOutputTokens: 16384,
-        parser: (text) => {
-          rawResponse = text;
-          return { article: text };
-        },
+        responseSchema: ARTICLE_RESPONSE_SCHEMA,
+        thinkingBudget: 1024,
         signal,
       });
       

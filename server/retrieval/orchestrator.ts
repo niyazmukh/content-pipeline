@@ -463,7 +463,7 @@ export const retrieveUnified = async (
     await Promise.all(workers);
 
     // Semantic Deduplication
-    const dedupResult = deduplicateArticles(extractedArticles, { enableSimilarity: false });
+    const dedupResult = deduplicateArticles(extractedArticles, { enableSimilarity: true, similarityThreshold: 0.7 });
     const uniqueArticles = dedupResult.unique;
 
     // Rank and Cluster

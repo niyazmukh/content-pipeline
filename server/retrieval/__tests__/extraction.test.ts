@@ -168,4 +168,54 @@ describe('extractArticle date inference', () => {
     expect(outcome.article).toBeNull();
     expect(outcome.error).toBe(GOOGLE_NEWS_WRAPPER_SKIP_ERROR);
   });
+
+  it('extracts the readable article body instead of navigation, cookie banners, or teaser articles', async () => {
+    const bodyParagraph =
+      'Acme Industrial said its June 2026 procurement rollout added supplier risk scoring, contract metadata extraction, and automated approval routing for manufacturers.';
+    const html = `
+      <html>
+        <head>
+          <title>Procurement rollout - Example</title>
+          <meta property="article:published_time" content="2026-02-02T10:00:00Z" />
+        </head>
+        <body>
+          <nav>Home Subscribe Advertise Contact</nav>
+          <div class="cookie">Accept cookies to continue reading this site.</div>
+          <article><h2>Related teaser</h2><p>Short unrelated teaser.</p></article>
+          <main>
+            <article>
+              <h1>Acme procurement rollout expands supplier risk checks</h1>
+              <p>${bodyParagraph}</p>
+              <p>The deployment covers factories in Ohio and Bavaria and links purchase-order exceptions to supplier scorecards.</p>
+              <p>Executives said the system is intended to reduce manual review for low-risk orders while keeping flagged suppliers under audit.</p>
+            </article>
+          </main>
+          <footer>Privacy Terms Newsletter</footer>
+        </body>
+      </html>
+    `;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(html, { status: 200, headers: { 'content-type': 'text/html' } })),
+    );
+
+    const outcome = await extractArticle(
+      {
+        id: '5',
+        title: 'Procurement rollout',
+        url: 'https://example.com/2026/02/02/procurement-rollout',
+        sourceName: 'Example',
+        publishedAt: null,
+        snippet: null,
+        providerData: null,
+      },
+      'google',
+      { config: configStub, queryTokens: ['procurement', 'supplier', 'risk'] },
+    );
+
+    expect(outcome.article?.body).toContain(bodyParagraph);
+    expect(outcome.article?.body).not.toContain('Accept cookies');
+    expect(outcome.article?.body).not.toContain('Short unrelated teaser');
+    expect(outcome.article?.quality.wordCount).toBeGreaterThan(35);
+  });
 });

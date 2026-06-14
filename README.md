@@ -2,7 +2,8 @@
 
 This repo contains:
 - A Vite + React UI (can be hosted on GitHub Pages)
-- A Node/Express server that runs the retrieval + LLM pipeline (must be hosted separately)
+- A Cloudflare Worker API for production GitHub Pages deployments
+- A Node/Express API for local development and alternate hosting
 
 ## Local dev
 
@@ -20,7 +21,7 @@ Current reliability controls:
 
 - Provider-specific query planning expands a natural-language topic into source-appropriate query variants.
 - Negative topic constraints are first-class: phrases such as `ignore company BigCommerce` or `ignore news from India` are parsed as exclusions, kept out of positive anchors/facets, rendered as provider-specific negative operators where supported, and enforced again during candidate/article filtering.
-- RSS, Google CSE, and NewsAPI report which query variants were tried and which one produced usable results.
+- RSS, Google CSE, and NewsAPI report which query variants were tried and which one produced usable results. Google CSE is treated as a legacy optional source; new users should rely on NewsAPI/EventRegistry/Google News RSS unless they already have CSE access.
 - Evidence scoring favors articles that contain topic anchors, requested facets, named entities, factual density, and usable body text.
 - A source quality gate selects the source set used for clustering and outline generation. Weak, thin, off-topic, or duplicate-domain sources can be rejected before synthesis.
 - Retrieval metrics in the UI show source readiness, selected/rejected source counts, provider diversity, anchor coverage, facet coverage, warnings, rejected-source reasons, and per-provider query diagnostics.
@@ -91,7 +92,7 @@ Set `VITE_API_BASE` in GitHub Pages to your Worker URL (e.g., `https://<name>.wo
 
 The UI stores keys in `localStorage` and includes them as headers:
 - `X-Gemini-Api-Key` (required)
-- `X-Google-Cse-Api-Key` + `X-Google-Cse-Cx` (optional)
+- `X-Google-Cse-Api-Key` + `X-Google-Cse-Cx` (optional; legacy existing CSE customers only)
 - `X-Newsapi-Key` (optional)
 - `X-Eventregistry-Api-Key` (optional)
 
@@ -112,13 +113,12 @@ The UI stores keys in `localStorage` and includes them as headers:
    - Sign up and open your profile page
    - Copy your API key into the EventRegistry field
 
-4) **Google CSE key + Search Engine ID**
-   - Create a search engine at `https://programmablesearchengine.google.com/`
-   - In Google Cloud, enable **Custom Search API**
-   - Copy the API key and the Search Engine ID (cx)
+4) **Google CSE key + Search Engine ID (legacy optional)**
+   - Google's Custom Search JSON API is closed to new customers and existing customers must move before January 1, 2027.
+   - Use this app's Google CSE fields only if you already have Custom Search JSON API access.
+   - For new source coverage, obtain NewsAPI and/or EventRegistry keys instead. A future full-web replacement should use a supported provider such as Vertex AI Search or another news/web search API and add a matching connector.
 
 ## Notes on modularity
 
 The UI types live in [shared/types.ts](shared/types.ts).
-The server has richer internal types under [server/retrieval/types.ts](server/retrieval/types.ts).
-A recommended refactor plan for unifying DTOs without breaking the server build is in [.docs/modularity.md](.docs/modularity.md).
+Server retrieval internals extend those shared DTOs in [server/retrieval/types.ts](server/retrieval/types.ts).

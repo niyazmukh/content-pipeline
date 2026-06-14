@@ -28,7 +28,7 @@ export const clusterArticles = async ({
   config,
   logger,
 }: ClusterArticlesArgs): Promise<ClusterArticlesResult> => {
-  const dedupResult = deduplicateArticles(articles, { enableSimilarity: false });
+  const dedupResult = deduplicateArticles(articles, { enableSimilarity: true, similarityThreshold: 0.7 });
   const uniqueArticles = dedupResult.unique;
 
   const { clusters } = rankAndClusterArticles(uniqueArticles, {

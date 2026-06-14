@@ -3,6 +3,7 @@ import type { Logger } from '../obs/logger';
 import { LLMService } from './llmService';
 import { scrapeMetadata } from './urlScraper';
 import { loadPrompt } from '../prompts/loader';
+import { replacePlaceholders } from '../utils/promptHydration';
 
 export interface TopicAnalysisResult {
   originalInput: string;
@@ -60,9 +61,10 @@ export class TopicAnalysisService {
     }
 
     const template = loadPrompt('topic_analysis.md');
-    const prompt = template
-      .replace('{INPUT_TEXT}', contextText)
-      .replace('{CURRENT_DATE}', new Date().toISOString().split('T')[0]);
+    const prompt = replacePlaceholders(template, {
+      '{INPUT_TEXT}': contextText,
+      '{CURRENT_DATE}': new Date().toISOString().split('T')[0],
+    });
 
     try {
       const result = await this.llm.generateAndParse<Omit<TopicAnalysisResult, 'originalInput' | 'isUrl'>>(prompt, {

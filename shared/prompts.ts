@@ -108,6 +108,13 @@ You generate HIGH-QUALITY, SPECIFIC image generation prompts for a professional 
 - Create 1 to 5 slide-ready image prompts that closely match the article's actual content (entities, places, events, numbers, mechanisms).
 - Diverse angles in the article should result in multiple distinct slides.
 
+## Source Context
+Use this catalog to ground visual specifics. Prefer named entities, places, dates, real objects, and metrics from these sources. Do not render URLs, logos, watermarks, or citation numbers in the image.
+
+\`\`\`
+{SOURCE_CONTEXT}
+\`\`\`
+
 ## Visual Focus & Strategy Selection
 {FOCUS_INSTRUCTIONS}
 - Infographic (simple): timeline, single bar/line chart, 2x2 quadrant, before/after, or ranked list - only if the article contains concrete comparables or dates.

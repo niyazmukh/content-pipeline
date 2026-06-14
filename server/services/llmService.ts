@@ -1,6 +1,11 @@
 import JSON5 from 'json5';
 import type { AppConfig } from '../../shared/config';
-import { rateLimitedGenerateContent, isTransientError, extractGenerateContentText } from './genai';
+import {
+  rateLimitedGenerateContent,
+  isTransientError,
+  extractGenerateContentText,
+  assertGenerateContentFinished,
+} from './genai';
 import { extractJson, extractJsonRobust } from '../utils/jsonExtract';
 import { sleep } from '../utils/async';
 import type { Logger } from '../obs/logger';
@@ -10,6 +15,9 @@ export interface GenerateOptions {
   temperature?: number;
   maxOutputTokens?: number;
   responseMimeType?: string;
+  responseSchema?: Record<string, unknown>;
+  responseJsonSchema?: Record<string, unknown>;
+  thinkingBudget?: number;
   signal?: AbortSignal;
 }
 
@@ -59,11 +67,18 @@ export class LLMService {
             temperature: options.temperature ?? this.config.llm.temperature,
             maxOutputTokens: options.maxOutputTokens ?? this.config.llm.maxOutputTokens,
             responseMimeType: options.responseMimeType,
+            responseSchema: options.responseSchema,
+            responseJsonSchema: options.responseJsonSchema,
+            thinkingConfig:
+              typeof options.thinkingBudget === 'number'
+                ? { thinkingBudget: options.thinkingBudget }
+                : undefined,
             safetySettings,
           },
           signal: options.signal,
         });
 
+        assertGenerateContentFinished(response);
         const text = extractGenerateContentText(response);
         if (text) return text;
         

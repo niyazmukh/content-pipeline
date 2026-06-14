@@ -13,6 +13,10 @@ export interface NewsApiConnectorOptions {
   signal?: AbortSignal;
   recencyHours?: number;
   exclusions?: QueryExclusions;
+  domains?: string[];
+  excludeDomains?: string[];
+  searchIn?: Array<'title' | 'description' | 'content'>;
+  sortBy?: 'relevancy' | 'popularity' | 'publishedAt';
 }
 
 const trunc = (value: string | null | undefined) =>
@@ -77,20 +81,40 @@ export const fetchNewsApiCandidates = async (
     options.signal.addEventListener('abort', abortListener, { once: true });
   }
 
+  const normalizeDomains = (domains: string[] | undefined): string | null => {
+    const cleaned = Array.from(
+      new Set(
+        (domains || [])
+          .map((domain) => domain.trim().toLowerCase())
+          .filter((domain) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)),
+      ),
+    );
+    return cleaned.length ? cleaned.slice(0, 20).join(',') : null;
+  };
+
   const attemptFetch = async (searchQuery: string) => {
     const items: ConnectorArticle[] = [];
     let rawReturned = 0;
     let page = 1;
     while (page <= maxPages) {
       const params = new URLSearchParams({
-        q: searchQuery,
-        sortBy: 'publishedAt',
+        q: searchQuery.slice(0, 500),
+        searchIn: (options.searchIn?.length ? options.searchIn : ['title', 'description']).join(','),
+        sortBy: options.sortBy ?? 'relevancy',
         language: 'en',
         pageSize: pageSize.toString(),
         page: page.toString(),
         from,
         to,
       });
+      const domains = normalizeDomains(options.domains);
+      if (domains) {
+        params.set('domains', domains);
+      }
+      const excludeDomains = normalizeDomains(options.excludeDomains);
+      if (excludeDomains) {
+        params.set('excludeDomains', excludeDomains);
+      }
 
       const response = await fetch(`${NEWS_API_ENDPOINT}?${params.toString()}`, {
         method: 'GET',

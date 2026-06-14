@@ -3,6 +3,7 @@ import { hashString } from '../../shared/crypto';
 import type { ConnectorArticle, NormalizedArticle, ProviderName } from './types';
 import { buildExcerpt } from '../utils/text';
 import { isGoogleNewsWrapperUrl, resolveGoogleNewsWrapperUrl } from './googleNewsWrapper';
+import { extractLongestContentBlock, extractReadableText, stripHtmlTags } from '../utils/readability';
 
 export const GOOGLE_NEWS_WRAPPER_SKIP_ERROR = 'google_news_wrapper_unresolved_or_rate_limited';
 
@@ -336,11 +337,7 @@ const extractDates = (html: string, textContent: string, rawUrl: string) => {
   };
 };
 
-const stripTags = (html: string): string => {
-  const withoutScripts = html.replace(/<script[\s\S]*?<\/script>/gi, ' ');
-  const withoutStyles = withoutScripts.replace(/<style[\s\S]*?<\/style>/gi, ' ');
-  return withoutStyles.replace(/<[^>]+>/g, ' ');
-};
+const stripTags = stripHtmlTags;
 
 const decodeEntities = (text: string): string => {
   const named: Record<string, string> = {
@@ -366,13 +363,8 @@ const decodeEntities = (text: string): string => {
   return out;
 };
 
-const normalizeWhitespace = (text: string): string =>
-  text.replace(/\s+/g, ' ').replace(/\u00a0/g, ' ').trim();
-
-const extractTagBlock = (html: string, tag: string): string | null => {
-  const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i');
-  const match = html.match(re);
-  return match ? match[1] : null;
+const extractFallbackBodyText = (html: string): string => {
+  return extractLongestContentBlock(html, decodeEntities);
 };
 
 const extractTitle = (html: string): string | null => {
@@ -699,16 +691,9 @@ export const extractArticle = async (
     const id = hashString(canonicalUrl);
     const sourceUrl = new URL(canonicalUrl);
     const title = extractTitle(html) || input.title || sourceUrl.href;
-    let textContent = '';
-    const articleBlock = extractTagBlock(html, 'article') || extractTagBlock(html, 'main') || extractTagBlock(html, 'body');
-    if (articleBlock) {
-      textContent = normalizeWhitespace(decodeEntities(stripTags(articleBlock)));
-    }
-    if (!textContent) {
-      textContent = normalizeWhitespace(decodeEntities(stripTags(html)));
-    }
+    let textContent = extractReadableText(html) || extractFallbackBodyText(html);
     const parseMs = Date.now() - parseStart;
-    // If Readability failed to extract meaningful text, attempt provider fallbacks
+    // If page parsing failed to extract meaningful text, attempt provider fallbacks.
     if (textContent.length < 200 && input.providerData) {
       if (provider === 'eventregistry') {
         const fallback =

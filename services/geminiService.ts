@@ -416,6 +416,7 @@ interface TargetedResearchPayload {
   point: string;
   summary?: string;
   recencyHours: number;
+  existingClusters?: StoryCluster[];
 }
 
 export const runTargetedResearchPoint = async (
@@ -485,6 +486,7 @@ export const generateArticle = async (payload: GenerateArticlePayload, onStageEv
 interface ImagePromptPayload {
   runId: string;
   article: string;
+  sourceCatalog?: SourceCatalogEntry[];
   preferences?: ImagePromptPreferences;
 }
 
@@ -492,7 +494,12 @@ export const generateImagePrompt = async (payload: ImagePromptPayload, onStageEv
   const url = `${API_BASE_URL}/generate-image-prompt-stream`;
   return streamSseRequest<ImagePromptGenerationResult>({
     url,
-    body: { runId: payload.runId, article: payload.article, preferences: payload.preferences },
+    body: {
+      runId: payload.runId,
+      article: payload.article,
+      sourceCatalog: payload.sourceCatalog,
+      preferences: payload.preferences,
+    },
     headers: buildAuthHeaders(),
     mapResult: (event, value) => {
       if (event === 'stage-event' && isStageEvent(value)) {

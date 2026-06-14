@@ -18,6 +18,7 @@ export interface TargetedResearchArgs {
   config: AppConfig;
   logger: Logger;
   store: ArtifactStore;
+  existingClusters?: StoryCluster[];
   signal?: AbortSignal;
 }
 
@@ -58,7 +59,8 @@ const formatDigest = (
     const citationId = idx + 1;
     const rep = cluster.representative;
     const published = rep.publishedAt ? rep.publishedAt.split('T')[0] : 'Unknown date';
-    lines.push(`${published} - ${rep.sourceName ?? rep.sourceHost}: ${rep.title} (${rep.canonicalUrl})\nKey points: ${rep.excerpt}`);
+    const passage = (rep.body || rep.excerpt || '').replace(/\s+/g, ' ').trim().slice(0, 1400);
+    lines.push(`${published} - ${rep.sourceName ?? rep.sourceHost}: ${rep.title} (${rep.canonicalUrl})\nKey points: ${passage}`);
     citations.push({
       id: citationId,
       title: rep.title,
@@ -88,6 +90,7 @@ export const performTargetedResearch = async ({
   config,
   logger,
   store,
+  existingClusters,
   signal,
 }: TargetedResearchArgs): Promise<TargetedResearchResult> => {
   const effectiveRecencyHours = recencyHoursOverride ?? config.recencyHours;
@@ -97,6 +100,76 @@ export const performTargetedResearch = async ({
     .replace(/\s+/g, ' ')
     .trim() || topic.trim() || outlinePoint.text;
   logger.info('Running targeted research', { runId, outlineIndex: outlinePoint.index, point: outlinePoint.text });
+
+  const selectClusters = (clusters: StoryCluster[], keywordHints: string[] = []): StoryCluster[] => {
+    const rankedClusters = clusters.slice().sort((a, b) => b.score - a.score);
+    const baselineTokens = new Set(tokenizeForRelevance(baselineQuery, { maxTokens: 24 }));
+    const topicTokens = new Set(tokenizeForRelevance(topic, { maxTokens: 12 }));
+    const keywordTokens = new Set(tokenizeForRelevance(keywordHints.filter(Boolean).join(' '), { maxTokens: 16 }));
+
+    const baselineSize = baselineTokens.size;
+    const baselineMinHits = baselineSize <= 4 ? 1 : baselineSize <= 8 ? 3 : 4;
+
+    const tokensForCluster = (cluster: StoryCluster): Set<string> => {
+      const rep = cluster.representative;
+      const repText = `${rep.title} ${rep.excerpt || ''} ${rep.body || ''}`;
+      return new Set(tokenizeForRelevance(repText, { maxTokens: 256 }));
+    };
+
+    const passesStrictGate = (cluster: StoryCluster): boolean => {
+      const repTokens = tokensForCluster(cluster);
+      const baselineHits = countIntersection(repTokens, baselineTokens);
+      const topicHits = topicTokens.size ? countIntersection(repTokens, topicTokens) : 0;
+      const keywordHits = keywordTokens.size ? countIntersection(repTokens, keywordTokens) : 0;
+
+      if (topicTokens.size && topicHits === 0) return false;
+      if (baselineHits < baselineMinHits) return false;
+      if (keywordTokens.size && keywordHits === 0) return false;
+      return true;
+    };
+
+    const passesFallbackGate = (cluster: StoryCluster): boolean => {
+      const repTokens = tokensForCluster(cluster);
+      const baselineHits = countIntersection(repTokens, baselineTokens);
+      const topicHits = topicTokens.size ? countIntersection(repTokens, topicTokens) : 0;
+
+      if (topicTokens.size && topicHits === 0) return false;
+      return baselineHits >= Math.max(1, Math.min(2, baselineMinHits));
+    };
+
+    const strictClusters = rankedClusters.filter(passesStrictGate);
+    return (strictClusters.length ? strictClusters : rankedClusters.filter(passesFallbackGate)).slice(0, 8);
+  };
+
+  if (existingClusters?.length) {
+    const topClusters = selectClusters(existingClusters);
+    const { digest, citations } = formatDigest(topClusters, effectiveRecencyHours);
+    return {
+      outlineIndex: outlinePoint.index,
+      prompt: baselineQuery,
+      batch: {
+        runId,
+        query: baselineQuery,
+        recencyHours: effectiveRecencyHours,
+        fetchedAt: new Date().toISOString(),
+        articles: topClusters.map((cluster) => cluster.representative) as any,
+        metrics: {
+          candidateCount: existingClusters.length,
+          preFiltered: existingClusters.length,
+          attemptedExtractions: 0,
+          accepted: topClusters.length,
+          duplicatesRemoved: 0,
+          newestArticleHours: null,
+          oldestArticleHours: null,
+          perProvider: [],
+          extractionErrors: [],
+        },
+      },
+      clusters: topClusters,
+      digest,
+      citations,
+    };
+  }
 
   const analysisService = new TopicAnalysisService(config, logger);
   const analysis = await analysisService.analyze(baselineQuery, signal);
@@ -124,50 +197,13 @@ export const performTargetedResearch = async ({
     store,
   });
 
-  const rankedClusters = retrievalResult.clusters.slice().sort((a, b) => b.score - a.score);
-  const baselineTokens = new Set(tokenizeForRelevance(baselineQuery, { maxTokens: 24 }));
-  const topicTokens = new Set(tokenizeForRelevance(topic, { maxTokens: 12 }));
-  const keywordTokens = new Set(
-    tokenizeForRelevance((analysis.keywords || []).filter(Boolean).join(' '), { maxTokens: 16 }),
-  );
-
-  const baselineSize = baselineTokens.size;
-  const baselineMinHits = baselineSize <= 4 ? 1 : baselineSize <= 8 ? 2 : 3;
-
-  const passesStrictGate = (cluster: StoryCluster): boolean => {
-    const repText = `${cluster.representative.title} ${cluster.representative.excerpt || ''}`;
-    const repTokens = new Set(tokenizeForRelevance(repText, { maxTokens: 128 }));
-
-    const baselineHits = countIntersection(repTokens, baselineTokens);
-    const topicHits = topicTokens.size ? countIntersection(repTokens, topicTokens) : 0;
-    const keywordHits = keywordTokens.size ? countIntersection(repTokens, keywordTokens) : 0;
-
-    if (topicTokens.size && topicHits === 0) return false;
-    if (baselineHits < baselineMinHits) return false;
-    if (keywordTokens.size && keywordHits === 0) return false;
-    return true;
-  };
-
-  const passesFallbackGate = (cluster: StoryCluster): boolean => {
-    const repText = `${cluster.representative.title} ${cluster.representative.excerpt || ''}`;
-    const repTokens = new Set(tokenizeForRelevance(repText, { maxTokens: 128 }));
-
-    const baselineHits = countIntersection(repTokens, baselineTokens);
-    const topicHits = topicTokens.size ? countIntersection(repTokens, topicTokens) : 0;
-
-    if (topicTokens.size && topicHits === 0) return false;
-    return baselineHits >= Math.max(1, Math.min(2, baselineMinHits));
-  };
-
-  const strictClusters = rankedClusters.filter(passesStrictGate);
-  const topClusters = (strictClusters.length ? strictClusters : rankedClusters.filter(passesFallbackGate)).slice(0, 8);
+  const topClusters = selectClusters(retrievalResult.clusters, analysis.keywords || []);
 
   if (logger && typeof logger.info === 'function') {
     logger.info('Targeted research cluster gating', {
       runId,
       outlineIndex: outlinePoint.index,
-      totalClusters: rankedClusters.length,
-      strictAccepted: strictClusters.length,
+      totalClusters: retrievalResult.clusters.length,
       finalAccepted: topClusters.length,
     });
   }

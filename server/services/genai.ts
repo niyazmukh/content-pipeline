@@ -81,7 +81,7 @@ export const isTransientError = (error: unknown): boolean => {
     return true;
   }
   const message = String((error as any)?.message ?? '').toLowerCase();
-  return /quota|unavailable|overload|temporar/.test(message);
+  return /quota|unavailable|overload|temporar|max_tokens|max tokens|finishreason=max_tokens/.test(message);
 };
 
 export interface GenerateContentParams {
@@ -94,6 +94,27 @@ export interface GenerateContentParams {
    */
   signal?: AbortSignal;
 }
+
+const getFinishReasons = (response: any): string[] => {
+  const candidates = response?.response?.candidates ?? response?.candidates ?? [];
+  if (!Array.isArray(candidates)) {
+    return [];
+  }
+  return candidates
+    .map((candidate) => candidate?.finishReason)
+    .filter((reason): reason is string => typeof reason === 'string' && reason.trim().length > 0);
+};
+
+export const assertGenerateContentFinished = (response: any): void => {
+  const finishReasons = getFinishReasons(response);
+  const badReason = finishReasons.find((reason) => {
+    const normalized = reason.toUpperCase();
+    return normalized === 'MAX_TOKENS' || normalized === 'SAFETY' || normalized === 'RECITATION' || normalized === 'BLOCKLIST';
+  });
+  if (badReason) {
+    throw new Error(`Gemini response ended with finishReason=${badReason}`);
+  }
+};
 
 export const rateLimitedGenerateContent = async <T>(
   config: AppConfig,
@@ -108,8 +129,7 @@ export const rateLimitedGenerateContent = async <T>(
   const requestTimestamps = state.requestTimestamps;
   const rateLimitMutex = state.rateLimitMutex;
   const windowMs = 60_000;
-  // Hard cap: never exceed 10 RPM regardless of config
-  const rpm = Math.max(1, Math.min(10, Number(config.llm.requestsPerMinute) || 10));
+  const rpm = Math.max(1, Math.min(120, Number(config.llm.requestsPerMinute) || 10));
 
   const maxAttempts = 5;
   let attempt = 0;

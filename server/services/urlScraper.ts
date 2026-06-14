@@ -1,3 +1,5 @@
+import { extractLongestContentBlock, extractReadableText } from '../utils/readability';
+
 export interface ScrapedMetadata {
   title: string;
   description: string;
@@ -24,12 +26,6 @@ const extractMetaContent = (html: string, key: string): string | null => {
   return contentMatch ? contentMatch[1].trim() : null;
 };
 
-const stripTags = (html: string): string => {
-  const withoutScripts = html.replace(/<script[\s\S]*?<\/script>/gi, ' ');
-  const withoutStyles = withoutScripts.replace(/<style[\s\S]*?<\/style>/gi, ' ');
-  return withoutStyles.replace(/<[^>]+>/g, ' ');
-};
-
 const decodeEntities = (text: string): string =>
   text
     .replace(/&nbsp;/g, ' ')
@@ -46,8 +42,6 @@ const decodeEntities = (text: string): string =>
       const code = Number.parseInt(hex, 16);
       return Number.isFinite(code) ? String.fromCharCode(code) : '';
     });
-
-const normalizeWhitespace = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 export const scrapeMetadata = async (url: string): Promise<ScrapedMetadata> => {
   try {
@@ -78,13 +72,7 @@ export const scrapeMetadata = async (url: string): Promise<ScrapedMetadata> => {
       extractMetaContent(html, 'og:description') ||
       '';
 
-    const mainBlock =
-      extractTagContent(html, 'article') ||
-      extractTagContent(html, 'main') ||
-      extractTagContent(html, 'body') ||
-      html;
-
-    const content = normalizeWhitespace(decodeEntities(stripTags(mainBlock))).slice(0, 2000);
+    const content = (extractReadableText(html) || extractLongestContentBlock(html, decodeEntities)).slice(0, 2000);
 
     return {
       title: decodeEntities(title).trim(),

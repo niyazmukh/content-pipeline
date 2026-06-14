@@ -388,6 +388,7 @@ const App: React.FC = () => {
               point: outlinePoints[outlineIndex].point,
               summary: outlinePoints[outlineIndex].summary,
               recencyHours: outlineResult.recencyHours,
+              existingClusters: outlineResult.clusters,
             },
             handleStageEvent,
           );
@@ -433,6 +434,7 @@ const App: React.FC = () => {
       const image = await generateImagePrompt({
         runId: outlineResult.runId,
         article: article.article.article,
+        sourceCatalog: article.sourceCatalog?.length ? article.sourceCatalog : catalog,
         preferences: imagePrefs,
       }, handleStageEvent);
 

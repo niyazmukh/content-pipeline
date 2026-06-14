@@ -135,7 +135,7 @@ export const buildWorkerConfig = (keys: RequestKeys, env: WorkerEnv = {}): AppCo
       flashLiteModel: 'gemini-2.5-flash-lite',
       temperature: 0.2,
       maxOutputTokens: 4096,
-      requestsPerMinute: Math.max(1, Math.min(10, resolvedRpm)),
+      requestsPerMinute: Math.max(1, Math.min(120, resolvedRpm)),
     },
     persistence: {
       mode: 'none',

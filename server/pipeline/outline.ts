@@ -5,6 +5,7 @@ import { LLMService } from '../services/llmService';
 import type { Logger } from '../obs/logger';
 import { validateOutline, OutlinePayload } from './validators';
 import { describeRecencyWindow } from '../utils/text';
+import { replacePlaceholders } from '../utils/promptHydration';
 
 export interface OutlineGeneratorArgs {
   runId: string;
@@ -249,13 +250,14 @@ export const generateOutlineFromClusters = async ({
   );
   const requiredUniqueDates = availableDates.size ? Math.min(3, availableDates.size) : 0;
   const recencyWindow = describeRecencyWindow(recencyHours);
-  const basePrompt = promptTemplate
-    .replaceAll('{TOPIC}', topic)
-    .replaceAll('{RECENCY_WINDOW}', recencyWindow)
-    .replaceAll('{CLUSTERS}', serializeClusters(clusters))
-    .replaceAll('{POINT_TARGET}', requiredPoints.toString())
-    .replaceAll('{CLUSTER_TARGET}', requiredClusterCoverage.toString())
-    .replaceAll('{DATE_TARGET}', requiredUniqueDates.toString());
+  const basePrompt = replacePlaceholders(promptTemplate, {
+    '{TOPIC}': topic,
+    '{RECENCY_WINDOW}': recencyWindow,
+    '{CLUSTERS}': serializeClusters(clusters),
+    '{POINT_TARGET}': requiredPoints.toString(),
+    '{CLUSTER_TARGET}': requiredClusterCoverage.toString(),
+    '{DATE_TARGET}': requiredUniqueDates.toString(),
+  });
 
   let attempt = 0;
   let rawResponse = '';

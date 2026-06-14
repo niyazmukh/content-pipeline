@@ -4,7 +4,7 @@ import { makeStageEmitter } from './stageEmitter';
 import { generateImagePrompt, normalizeImagePromptPreferences } from './imagePrompt';
 import { createLogger } from '../obs/logger';
 import type { ArtifactStore } from '../../shared/artifacts';
-import type { ImagePromptPreferences } from '../../shared/types';
+import type { ImagePromptPreferences, SourceCatalogEntry } from '../../shared/types';
 
 export interface GenerateImagePromptStreamArgs {
   body: unknown;
@@ -17,6 +17,7 @@ export interface GenerateImagePromptStreamArgs {
 interface ImagePromptRequestBody {
   runId: string;
   article: string;
+  sourceCatalog?: SourceCatalogEntry[];
   preferences?: ImagePromptPreferences;
 }
 
@@ -56,6 +57,7 @@ export const handleGenerateImagePromptStream = async ({
     const result = await generateImagePrompt({
       runId: body.runId,
       article: body.article,
+      sourceCatalog: Array.isArray(body.sourceCatalog) ? body.sourceCatalog : undefined,
       preferences: normalizeImagePromptPreferences(body.preferences),
       config,
       logger,

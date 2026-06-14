@@ -5,16 +5,19 @@ import type {
   ImagePromptPreferences,
   ImagePromptSlide,
   ImagePromptStyle,
+  SourceCatalogEntry,
 } from '../../shared/types';
 import { loadPrompt } from '../prompts/loader';
 import { LLMService } from '../services/llmService';
 import type { Logger } from '../obs/logger';
 import JSON5 from 'json5';
 import { extractJson, extractJsonRobust } from '../utils/jsonExtract';
+import { replacePlaceholders } from '../utils/promptHydration';
 
 export interface ImagePromptArgs {
   runId: string;
   article: string;
+  sourceCatalog?: SourceCatalogEntry[];
   preferences?: ImagePromptPreferences;
   config: AppConfig;
   logger: Logger;
@@ -95,6 +98,43 @@ const normalizeSlide = (value: unknown): ImagePromptSlide | null => {
   };
 };
 
+const buildSourceContext = (sourceCatalog: SourceCatalogEntry[] | undefined): string => {
+  const sources = (sourceCatalog || []).slice(0, 12);
+  if (!sources.length) {
+    return 'No source catalog supplied. Use only concrete entities, places, and metrics present in the article.';
+  }
+  return sources
+    .map((source) => {
+      const date = source.publishedAt ? source.publishedAt.split('T')[0] : 'Undated';
+      return `[${source.id}] ${date} - ${source.source}: ${source.title} (${source.url})`;
+    })
+    .join('\n');
+};
+
+const IMAGE_PROMPT_RESPONSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    slides: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 5,
+      items: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          visualStrategy: { type: 'string' },
+          layout: { type: 'string' },
+          overlayText: { type: 'array', items: { type: 'string' } },
+          prompt: { type: 'string' },
+          negativePrompt: { type: 'string' },
+        },
+        required: ['title', 'visualStrategy', 'prompt'],
+      },
+    },
+  },
+  required: ['slides'],
+};
+
 const parseImagePrompt = (raw: string): ImagePromptSlide[] => {
   const extracted = extractJson(raw) || extractJsonRobust(raw);
   if (!extracted) {
@@ -125,6 +165,7 @@ const parseImagePrompt = (raw: string): ImagePromptSlide[] => {
 export const generateImagePrompt = async ({
   runId,
   article,
+  sourceCatalog,
   preferences,
   config,
   logger,
@@ -140,12 +181,14 @@ export const generateImagePrompt = async ({
   const styleInstr = STYLE_GUIDELINES[style];
   const wordLimit = detailLevel === 'high_precision' ? '150' : '80';
 
-  const hydrated = template
-    .replace('{ARTICLE_CONTENT}', article)
-    .replace('{IMAGE_PREFERENCES}', prefsDesc)
-    .replace('{FOCUS_INSTRUCTIONS}', focusInstr)
-    .replace('{STYLE_GUIDELINES}', styleInstr)
-    .replace('{WORD_LIMIT}', wordLimit);
+  const hydrated = replacePlaceholders(template, {
+    '{ARTICLE_CONTENT}': article,
+    '{SOURCE_CONTEXT}': buildSourceContext(sourceCatalog),
+    '{IMAGE_PREFERENCES}': prefsDesc,
+    '{FOCUS_INSTRUCTIONS}': focusInstr,
+    '{STYLE_GUIDELINES}': styleInstr,
+    '{WORD_LIMIT}': wordLimit,
+  });
 
   logger.info('Generating image prompt', { runId, focus, style, detailLevel });
 
@@ -153,10 +196,12 @@ export const generateImagePrompt = async ({
 
   try {
     const raw = await llmService.generateWithRetry(hydrated, {
-      model: config.llm.flashModel,
+      model: config.llm.proModel,
       responseMimeType: 'application/json',
-      temperature: Math.min(config.llm.temperature + 0.35, 0.9),
-      maxOutputTokens: config.llm.maxOutputTokens,
+      responseSchema: IMAGE_PROMPT_RESPONSE_SCHEMA,
+      temperature: Math.min(config.llm.temperature + 0.05, 0.35),
+      maxOutputTokens: 2048,
+      thinkingBudget: 0,
       signal,
     });
 

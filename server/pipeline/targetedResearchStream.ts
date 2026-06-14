@@ -5,6 +5,7 @@ import { createLogger } from '../obs/logger';
 import { performTargetedResearch } from './targetedResearch';
 import type { ArtifactStore } from '../../shared/artifacts';
 import type { EvidenceItem } from './types';
+import type { StoryCluster } from '../retrieval/types';
 
 export interface TargetedResearchStreamArgs {
   body: unknown;
@@ -21,6 +22,7 @@ type RequestBody = {
   point: string;
   summary?: string;
   recencyHours?: number;
+  existingClusters?: StoryCluster[];
 };
 
 const isRequestBody = (value: unknown): value is RequestBody =>
@@ -64,6 +66,7 @@ export const handleTargetedResearchStream = async ({
       config,
       logger,
       store,
+      existingClusters: Array.isArray(body.existingClusters) ? body.existingClusters : undefined,
       signal,
     });
 
