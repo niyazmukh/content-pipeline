@@ -95,6 +95,9 @@ export const buildProviderQueryPlan = (intentOrTopic: QueryIntent | string): Pro
     google: renderGoogleQueries(anchors, facets, exclusions),
     googlenews: renderGoogleNewsQueries(anchors, facets, exclusions),
     newsapi: renderNewsApiQueries(anchors, facets, exclusions),
-    eventregistry: normalizeEventRegistryKeywords([...anchors, ...facets], { maxTerms: 12 }),
+    // EventRegistry keyword arrays are combined with OR by the connector. Keep
+    // them anchored to the subject; generic facets such as "regulation" make
+    // the provider return unrelated but technically matching stories.
+    eventregistry: normalizeEventRegistryKeywords(anchors, { maxTerms: 6 }),
   };
 };

@@ -1,6 +1,7 @@
 import type { RetrievalQualityReport } from '../../shared/types';
 import type { QueryIntent } from './queryIntent';
 import type { RankedArticle } from './ranking';
+import { isDeniedSource } from './sourceAuthority';
 
 export interface SourceSelectionOptions {
   minSources?: number;
@@ -94,6 +95,7 @@ const rejectionReasonsFor = (
   const anchors = intent.subjectPhrases.length ? intent.subjectPhrases : [intent.originalTopic];
   const hasAnchor = anchors.length === 0 || anchors.some((anchor) => hasPhrase(text, anchor));
 
+  if (isDeniedSource(article.canonicalUrl)) reasons.push('low_credibility_source');
   if (evidenceScore < options.minEvidenceScore) reasons.push('weak_evidence');
   if (!hasAnchor && options.minAnchorCoverage > 0) reasons.push('missing_topic_anchor');
   if ((article.quality.wordCount ?? 0) < 250) reasons.push('thin_article');
@@ -149,7 +151,12 @@ export const selectQualitySources = (
       if (selected.some((item) => item.id === article.id)) continue;
       const existingRejected = rejected.find((entry) => entry.article.id === article.id);
       const reasons = existingRejected?.reasons ?? [];
-      if (reasons.some((reason) => ['weak_evidence', 'missing_topic_anchor', 'thin_article'].includes(reason))) continue;
+      if (
+        reasons.some((reason) =>
+          ['low_credibility_source', 'weak_evidence', 'missing_topic_anchor', 'thin_article'].includes(reason),
+        )
+      )
+        continue;
       selected.push(article);
       if (selected.length >= minSources || selected.length >= maxSources) break;
     }

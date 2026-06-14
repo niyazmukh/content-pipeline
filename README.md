@@ -24,6 +24,8 @@ Current reliability controls:
 - RSS, Google CSE, and NewsAPI report which query variants were tried and which one produced usable results. Google CSE is treated as a legacy optional source; new users should rely on NewsAPI/EventRegistry/Google News RSS unless they already have CSE access.
 - Evidence scoring favors articles that contain topic anchors, requested facets, named entities, factual density, and usable body text.
 - A source quality gate selects the source set used for clustering and outline generation. Weak, thin, off-topic, or duplicate-domain sources can be rejected before synthesis.
+- Source credibility tiering (`server/retrieval/sourceAuthority.ts`) boosts premier outlets and primary research/consulting firms (Reuters, Bloomberg, FT, Forbes, Yahoo Finance, McKinsey, Gartner, S&P, OECD, ...) in ranking and extraction order, treats unknown domains as neutral, and rejects PR wires and SEO "market-report" mills as low-credibility. This is a preference + denylist (not a hard allowlist), so niche/regional coverage is not starved. Extend the tier/deny sets in that file as needed.
+- EventRegistry results are biased toward established sources via its source-rank percentile. Set `EVENT_REGISTRY_SOURCE_RANK_PERCENTILE` (10-100, default 50; lower = stricter; 100 disables) to tune how aggressively the long tail of obscure sources is dropped at the source.
 - Retrieval metrics in the UI show source readiness, selected/rejected source counts, provider diversity, anchor coverage, facet coverage, warnings, rejected-source reasons, and per-provider query diagnostics.
 
 For broad topics, include the core subject and the desired facets in the topic prompt, for example:

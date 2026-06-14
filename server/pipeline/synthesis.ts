@@ -112,24 +112,27 @@ const replaceOrAppendKeyDevelopments = (article: string, keyDevSection: string):
   return `${before}\n\n${keyDevSection}\n`;
 };
 
+// Gemini `responseSchema` expects the uppercase OpenAPI 3.0 Type enum
+// (https://ai.google.dev/gemini-api/docs/structured-output). Lowercase JSON-Schema
+// type names are rejected by the API.
 const ARTICLE_RESPONSE_SCHEMA = {
-  type: 'object',
+  type: 'OBJECT',
   properties: {
-    title: { type: 'string' },
-    article: { type: 'string' },
+    title: { type: 'STRING' },
+    article: { type: 'STRING' },
     sources: {
-      type: 'array',
+      type: 'ARRAY',
       items: {
-        type: 'object',
+        type: 'OBJECT',
         properties: {
-          id: { type: 'number' },
-          title: { type: 'string' },
-          url: { type: 'string' },
+          id: { type: 'NUMBER' },
+          title: { type: 'STRING' },
+          url: { type: 'STRING' },
         },
         required: ['id', 'title', 'url'],
       },
     },
-    wordCount: { type: 'number' },
+    wordCount: { type: 'NUMBER' },
   },
   required: ['title', 'article', 'sources', 'wordCount'],
 };
@@ -174,6 +177,9 @@ export const synthesizeArticle = async ({
     .reverse();
   const narrativeDateTarget = Math.min(3, availableDates.length);
   const distinctSourceTarget = Math.max(1, Math.min(6, resolvedCatalog.length));
+  // Citation target scales with the available corpus so thin-source runs are not
+  // forced to fail or stuff citations; caps at 8 for a healthy corpus.
+  const citationTarget = Math.max(3, Math.min(8, distinctSourceTarget * 2));
   const availableDatesText = availableDates.length
     ? availableDates.slice(0, 12).map((d) => `- ${d}`).join('\n')
     : 'none';
@@ -290,6 +296,7 @@ export const synthesizeArticle = async ({
       '{RECENCY_WINDOW}': recencyWindow,
       '{DATE_TARGET}': String(narrativeDateTarget),
       '{DISTINCT_SOURCE_TARGET}': String(distinctSourceTarget),
+      '{CITATION_TARGET}': String(citationTarget),
       '{TOPIC}': topic,
       '{OUTLINE}': outlineJson,
       '{EVIDENCE}': evidenceText,
@@ -333,7 +340,7 @@ export const synthesizeArticle = async ({
     coerced.article = replaceOrAppendKeyDevelopments(coerced.article, keyDevelopmentsSection);
 
     const { errors: bodyErrors, warnings: bodyWarnings } = validateArticleBody(coerced.article, {
-      minCitations: 8,
+      minCitations: citationTarget,
       minDistinctCitationIds: distinctSourceTarget,
       minNarrativeDates: narrativeDateTarget,
       narrativeDatesPolicy: 'warn',

@@ -17,6 +17,7 @@ export interface NewsApiConnectorOptions {
   excludeDomains?: string[];
   searchIn?: Array<'title' | 'description' | 'content'>;
   sortBy?: 'relevancy' | 'popularity' | 'publishedAt';
+  minResultsBeforeFallback?: number;
 }
 
 const trunc = (value: string | null | undefined) =>
@@ -66,6 +67,7 @@ export const fetchNewsApiCandidates = async (
 
   const pageSize = Math.min(Math.max(options.pageSize ?? config.connectors.newsApi.pageSize ?? 20, 1), 100);
   const maxPages = Math.min(Math.max(options.maxPages ?? 2, 1), 5);
+  const minResultsBeforeFallback = Math.min(Math.max(options.minResultsBeforeFallback ?? 4, 1), 25);
 
   const recencyHours = options.recencyHours ?? config.recencyHours;
   const from = new Date(Date.now() - recencyHours * 60 * 60 * 1000).toISOString();
@@ -221,9 +223,11 @@ export const fetchNewsApiCandidates = async (
 
   const queryVariants = Array.from(new Set(inputVariants.flatMap(buildQueryVariants)));
   const variantMetrics: Array<{ query: string; rawReturned: number; afterPreFilter: number; used: boolean }> = [];
+  const mergedItems: ConnectorArticle[] = [];
+  const seenUrls = new Set<string>();
+  let pagesFetched = 0;
 
   let lastError: Error | null = null;
-  let lastResult: ConnectorResult | null = null;
   try {
     for (let i = 0; i < queryVariants.length; i += 1) {
       const variant = queryVariants[i];
@@ -236,30 +240,25 @@ export const fetchNewsApiCandidates = async (
           used: false,
         };
         variantMetrics.push(metric);
-        // If we got zero results and have another variant to try, keep going.
-        if (result.items.length === 0 && i < queryVariants.length - 1) {
-          lastResult = {
-            provider: 'newsapi',
-            fetchedAt: new Date().toISOString(),
-            query: result.query,
-            items: result.items,
-            metrics: {
-              pagesFetched: result.pagesFetched,
-              totalCandidates: result.items.length,
-              queryVariants: variantMetrics,
-            },
-          };
-          continue;
+        pagesFetched += result.pagesFetched;
+        for (const item of result.items) {
+          const key = item.url.toLowerCase();
+          if (seenUrls.has(key)) continue;
+          seenUrls.add(key);
+          mergedItems.push(item);
         }
         metric.used = result.items.length > 0;
+        if (mergedItems.length < minResultsBeforeFallback && i < queryVariants.length - 1) {
+          continue;
+        }
         return {
           provider: 'newsapi',
           fetchedAt: new Date().toISOString(),
-          query: result.query,
-          items: result.items,
+          query: variantMetrics.filter((entry) => entry.used).map((entry) => entry.query).join(' | ') || result.query,
+          items: mergedItems,
           metrics: {
-            pagesFetched: result.pagesFetched,
-            totalCandidates: result.items.length,
+            pagesFetched,
+            totalCandidates: mergedItems.length,
             queryVariants: variantMetrics,
           },
         };
@@ -280,8 +279,17 @@ export const fetchNewsApiCandidates = async (
     if (lastError) {
       throw lastError;
     }
-    if (lastResult) return lastResult;
-    throw new Error('NewsAPI fetch failed unexpectedly');
+    return {
+      provider: 'newsapi',
+      fetchedAt: new Date().toISOString(),
+      query: variantMetrics.filter((entry) => entry.used).map((entry) => entry.query).join(' | ') || fallbackInput,
+      items: mergedItems,
+      metrics: {
+        pagesFetched,
+        totalCandidates: mergedItems.length,
+        queryVariants: variantMetrics,
+      },
+    };
   } finally {
     if (abortListener && options.signal) {
       options.signal.removeEventListener('abort', abortListener);

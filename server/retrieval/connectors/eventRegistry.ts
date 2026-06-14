@@ -251,6 +251,15 @@ const buildRequestParams = (
 
   params.set('apiKey', String(config.connectors.eventRegistry.apiKey || '').trim());
   params.set('resultType', 'articles');
+  // Bias toward credible/established sources: restrict to the sources that
+  // generate roughly the top N% of content (EventRegistry source-rank percentile).
+  // https://github.com/EventRegistry/event-registry-python/wiki/Source-filtering
+  const rawPercentile = config.connectors.eventRegistry.sourceRankPercentile ?? 100;
+  const endPercentile = Math.min(100, Math.max(10, Math.round(rawPercentile / 10) * 10));
+  if (endPercentile < 100) {
+    params.set('startSourceRankPercentile', '0');
+    params.set('endSourceRankPercentile', String(endPercentile));
+  }
   addArray('keyword', keywordPayload);
   params.set('keywordLoc', 'body,title');
   addArray('lang', ['eng']);

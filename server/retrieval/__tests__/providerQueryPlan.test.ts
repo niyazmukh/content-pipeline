@@ -26,9 +26,9 @@ describe('query intent and provider query planning', () => {
       '("b2b ecommerce" OR "b2b e-commerce") ("market research" OR "reports" OR "regulation" OR "case studies" OR "acquisitions")',
     );
     expect(plan.googlenews[0]).toBe('"b2b ecommerce" OR "b2b e-commerce"');
-    expect(plan.eventregistry).toEqual(
-      expect.arrayContaining(['b2b ecommerce', 'b2b e-commerce', 'market research', 'regulation', 'case studies']),
-    );
+    expect(plan.eventregistry).toEqual(expect.arrayContaining(['b2b ecommerce', 'b2b e-commerce']));
+    expect(plan.eventregistry).not.toContain('regulation');
+    expect(plan.eventregistry).not.toContain('acquisitions');
   });
 
   it('does not promote quoted facet phrases from LLM boolean queries into anchors', () => {
@@ -104,8 +104,8 @@ describe('query intent and provider query planning', () => {
       '("b2b ecommerce news" OR "b2b ecommerce" OR "b2b e-commerce") ("market report" OR "market research" OR "report")',
     );
     expect(plan.newsapi[0]).toContain('AND ("market research" OR "reports" OR "regulation" OR "case studies" OR "acquisitions")');
-    expect(plan.eventregistry).toEqual(
-      expect.arrayContaining(['b2b ecommerce', 'b2b e-commerce', 'market research', 'regulation', 'case studies']),
-    );
+    expect(plan.eventregistry).toEqual(expect.arrayContaining(['b2b ecommerce', 'b2b e-commerce']));
+    expect(plan.eventregistry).not.toContain('regulation');
+    expect(plan.eventregistry).not.toContain('acquisitions');
   });
 });

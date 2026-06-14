@@ -93,6 +93,9 @@ describe('generateImagePrompt', () => {
     const call = instance.generateWithRetry.mock.calls[0];
     expect(call[0]).toContain('Acme adds supplier risk scoring to procurement suite');
     expect(call[0]).toContain('Example Industry News');
+    expect(call[0]).toContain('Visual Consistency Contract');
+    expect(call[0]).toContain('Acme');
+    expect(call[0]).toContain('supplier risk scoring');
     expect(call[1]).toMatchObject({
       model: 'gemini-2.5-pro',
       temperature: 0.25,

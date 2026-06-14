@@ -17,6 +17,7 @@ import { buildProviderQueryPlan } from './providerQueryPlan';
 import { buildQueryIntent } from './queryIntent';
 import { selectQualitySources } from './sourceSelection';
 import { isGoogleNewsWrapperUrl } from './googleNewsWrapper';
+import { getSourceAuthorityWeight } from './sourceAuthority';
 import type { ArtifactStore } from '../../shared/artifacts';
 import type {
   ProviderName,
@@ -64,7 +65,10 @@ const computeCandidateScore = (candidate: CandidateRecord, queryTokens: string[]
   const overlap = matches / queryTokens.length;
   const lengthBonus = Math.min(1, content.length / 240) * 0.15;
   const dateBonus = candidate.publishedAt ? 0.05 : 0;
-  return overlap + lengthBonus + dateBonus;
+  // Spend the limited extraction budget on credible sources first, and push
+  // denied PR/SEO sources to the back of each provider queue.
+  const authorityBonus = getSourceAuthorityWeight(candidate.url);
+  return overlap + lengthBonus + dateBonus + authorityBonus;
 };
 
 const uniquenessKey = (url: string): string => {

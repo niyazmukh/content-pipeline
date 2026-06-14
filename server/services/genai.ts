@@ -105,6 +105,33 @@ const getFinishReasons = (response: any): string[] => {
     .filter((reason): reason is string => typeof reason === 'string' && reason.trim().length > 0);
 };
 
+/**
+ * Clamp a requested thinking budget into the range the target Gemini 2.5 model
+ * actually accepts. Sending an out-of-range budget (e.g. 0 to a Pro model, which
+ * cannot disable thinking) causes API errors or silently ignored config.
+ *
+ * Official ranges (https://ai.google.dev/gemini-api/docs/thinking):
+ *   2.5 Pro:        128..32768   (cannot disable; no 0)
+ *   2.5 Flash:      0..24576     (0 disables thinking)
+ *   2.5 Flash-Lite: 0 or 512..24576 (0 disables; otherwise >=512)
+ *   -1 = dynamic thinking (supported on all 2.5 models).
+ */
+export const clampThinkingBudgetForModel = (model: string, budget: number): number => {
+  if (budget === -1) return -1;
+  const m = (model || '').toLowerCase();
+  if (m.includes('flash-lite')) {
+    if (budget <= 0) return 0;
+    return Math.min(Math.max(budget, 512), 24576);
+  }
+  if (m.includes('flash')) {
+    return Math.min(Math.max(budget, 0), 24576);
+  }
+  if (m.includes('pro')) {
+    return Math.min(Math.max(budget, 128), 32768);
+  }
+  return Math.max(0, budget);
+};
+
 export const assertGenerateContentFinished = (response: any): void => {
   const finishReasons = getFinishReasons(response);
   const badReason = finishReasons.find((reason) => {
@@ -172,6 +199,15 @@ export const rateLimitedGenerateContent = async <T>(
       const reqConfig: Record<string, unknown> = { ...(params.config ?? {}) };
       if (params.signal && reqConfig.abortSignal == null) {
         reqConfig.abortSignal = params.signal;
+      }
+      // Clamp thinking budget to the current model's accepted range. The model can
+      // change across fallback attempts, so this must run per attempt.
+      const thinkingConfig = reqConfig.thinkingConfig as { thinkingBudget?: number } | undefined;
+      if (thinkingConfig && typeof thinkingConfig.thinkingBudget === 'number') {
+        reqConfig.thinkingConfig = {
+          ...thinkingConfig,
+          thinkingBudget: clampThinkingBudgetForModel(params.model, thinkingConfig.thinkingBudget),
+        };
       }
 
       const response = await ai.models.generateContent({

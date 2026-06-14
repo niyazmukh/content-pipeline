@@ -111,22 +111,24 @@ const buildSourceContext = (sourceCatalog: SourceCatalogEntry[] | undefined): st
     .join('\n');
 };
 
+// Gemini `responseSchema` expects the uppercase OpenAPI 3.0 Type enum
+// (https://ai.google.dev/gemini-api/docs/structured-output). The slides count is
+// enforced in code (parseImagePrompt slices to 5) rather than via JSON-Schema
+// minItems/maxItems, which the OpenAPI Schema type does not accept as numbers.
 const IMAGE_PROMPT_RESPONSE_SCHEMA = {
-  type: 'object',
+  type: 'OBJECT',
   properties: {
     slides: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 5,
+      type: 'ARRAY',
       items: {
-        type: 'object',
+        type: 'OBJECT',
         properties: {
-          title: { type: 'string' },
-          visualStrategy: { type: 'string' },
-          layout: { type: 'string' },
-          overlayText: { type: 'array', items: { type: 'string' } },
-          prompt: { type: 'string' },
-          negativePrompt: { type: 'string' },
+          title: { type: 'STRING' },
+          visualStrategy: { type: 'STRING' },
+          layout: { type: 'STRING' },
+          overlayText: { type: 'ARRAY', items: { type: 'STRING' } },
+          prompt: { type: 'STRING' },
+          negativePrompt: { type: 'STRING' },
         },
         required: ['title', 'visualStrategy', 'prompt'],
       },

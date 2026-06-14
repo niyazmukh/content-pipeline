@@ -13,6 +13,7 @@ export interface WorkerEnv {
   GOOGLE_NEWS_RSS_MAX_RESULTS?: string;
   NEWS_API_KEY?: string;
   EVENT_REGISTRY_API_KEY?: string;
+  EVENT_REGISTRY_SOURCE_RANK_PERCENTILE?: string;
 }
 
 const numberOr = (value: string | null, fallback: number): number => {
@@ -126,6 +127,7 @@ export const buildWorkerConfig = (keys: RequestKeys, env: WorkerEnv = {}): AppCo
         lookbackHours: 168,
         maxEvents: 25,
         enabled: Boolean(resolvedEventRegistryKey),
+        sourceRankPercentile: numberOr(env.EVENT_REGISTRY_SOURCE_RANK_PERCENTILE ?? null, 50),
       },
     },
     llm: {

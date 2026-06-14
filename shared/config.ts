@@ -72,6 +72,14 @@ export const ConfigSchema = z.object({
       lookbackHours: z.number().int().positive(),
       maxEvents: z.number().int().positive(),
       enabled: z.boolean(),
+      /**
+       * Restrict results to the most credible/established sources via EventRegistry's
+       * source-rank percentile. `endSourceRankPercentile` keeps only sources that
+       * generate roughly the top N% of content; lower = stricter credibility.
+       * Range 10-100 (rounded to nearest 10); 100 disables the restriction.
+       * https://github.com/EventRegistry/event-registry-python/wiki/Source-filtering
+       */
+      sourceRankPercentile: z.number().int().min(10).max(100).default(50),
     }),
   }),
   llm: z.object({

@@ -88,6 +88,18 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
   const quality = metrics.quality;
   const qualityBadgeVariant = quality?.readyForSynthesis ? 'success' : 'warning';
   const qualityBadgeText = quality?.readyForSynthesis ? 'Ready' : 'Needs Review';
+  const diagnosticsJson = JSON.stringify(
+    {
+      candidateCount: metrics.candidateCount,
+      accepted: metrics.accepted,
+      duplicatesRemoved: metrics.duplicatesRemoved,
+      perProvider,
+      extractionErrors,
+      quality,
+    },
+    null,
+    2,
+  );
 
   return (
     <Card 
@@ -275,6 +287,15 @@ const RetrievalMetricsPanel: React.FC<RetrievalMetricsPanelProps> = ({ metrics }
           </ul>
         </div>
       )}
+
+      <details className="mt-6 rounded border border-slate-800 bg-slate-950/40">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-slate-300 hover:text-slate-100">
+          Provider diagnostics JSON
+        </summary>
+        <pre className="max-h-96 overflow-auto border-t border-slate-800 p-4 text-xs leading-relaxed text-slate-400">
+          {diagnosticsJson}
+        </pre>
+      </details>
     </Card>
   );
 };

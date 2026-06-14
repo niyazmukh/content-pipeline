@@ -2,6 +2,7 @@ import type { NormalizedArticle, StoryCluster } from './types';
 import { computeSimilarity } from '../utils/text';
 import { scoreEvidenceQuality } from './evidenceQuality';
 import type { QueryIntent } from './queryIntent';
+import { getSourceAuthorityWeight } from './sourceAuthority';
 
 export interface RankingOptions {
   recencyHours: number;
@@ -10,34 +11,6 @@ export interface RankingOptions {
   attachThreshold?: number;
   queryIntent?: QueryIntent;
 }
-
-/**
- * Domain reputation weights for ranking.
- * PR wires and low-quality sources get negative adjustments.
- */
-const DOMAIN_WEIGHTS: Record<string, number> = {
-  'globenewswire.com': -0.2,
-  'prnewswire.com': -0.2,
-  'businesswire.com': -0.2,
-  'prweb.com': -0.15,
-  'marketwatch.com': -0.1,
-  // Down-rank low-credibility sources
-  'naturalnews.com': -0.4,
-};
-
-const getDomainWeight = (url: string): number => {
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    for (const [domain, weight] of Object.entries(DOMAIN_WEIGHTS)) {
-      if (hostname.includes(domain)) {
-        return weight;
-      }
-    }
-  } catch {
-    // invalid URL
-  }
-  return 0;
-};
 
 export interface RankedArticle extends NormalizedArticle {
   score: number;
@@ -57,7 +30,7 @@ const computeScore = (article: NormalizedArticle, options: RankingOptions): Rank
   const recencyScore = Number((1 - Math.min(hoursOld / options.recencyHours, 1)).toFixed(3));
   const qualityScore = Number(Math.min(article.quality.wordCount / 1200, 1).toFixed(3));
   const relevanceScore = Number(article.quality.relevanceScore.toFixed(3));
-  const domainWeight = getDomainWeight(article.canonicalUrl);
+  const domainWeight = getSourceAuthorityWeight(article.canonicalUrl);
   const evidence = scoreEvidenceQuality(article, options.queryIntent);
 
   const baseScore = recencyScore * 0.25 + relevanceScore * 0.15 + qualityScore * 0.15 + evidence.score * 0.45;

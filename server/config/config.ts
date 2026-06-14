@@ -92,6 +92,7 @@ const buildConfig = (): AppConfig => {
         lookbackHours: numberFromEnv(process.env.EVENT_REGISTRY_LOOKBACK_HOURS, 168),
         maxEvents: numberFromEnv(process.env.EVENT_REGISTRY_MAX_EVENTS, 25),
         enabled: booleanFromEnv(process.env.EVENT_REGISTRY_ENABLED, true),
+        sourceRankPercentile: numberFromEnv(process.env.EVENT_REGISTRY_SOURCE_RANK_PERCENTILE, 50),
       },
     },
     llm: {
