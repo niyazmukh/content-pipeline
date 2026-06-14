@@ -691,7 +691,10 @@ export const extractArticle = async (
     const id = hashString(canonicalUrl);
     const sourceUrl = new URL(canonicalUrl);
     const title = extractTitle(html) || input.title || sourceUrl.href;
-    let textContent = extractReadableText(html) || extractFallbackBodyText(html);
+    const useLightweightExtraction = options.config.retrieval.lightweightExtraction === true;
+    let textContent = useLightweightExtraction
+      ? extractFallbackBodyText(html)
+      : extractReadableText(html) || extractFallbackBodyText(html);
     const parseMs = Date.now() - parseStart;
     // If page parsing failed to extract meaningful text, attempt provider fallbacks.
     if (textContent.length < 200 && input.providerData) {

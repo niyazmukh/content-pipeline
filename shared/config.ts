@@ -30,6 +30,7 @@ export const ConfigSchema = z.object({
     blockedCidrs: z.array(z.string().min(3)),
     clusterThreshold: z.number().min(0).max(1).optional(),
     attachThreshold: z.number().min(0).max(1).optional(),
+    lightweightExtraction: z.boolean().default(false),
   }),
   connectors: z.object({
     googleCse: z.object({
