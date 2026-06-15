@@ -62,6 +62,18 @@ export const ConfigSchema = z.object({
        * Max RSS items to return from the feed (best-effort; the feed may return fewer).
        */
       maxResults: z.number().int().positive().max(100).default(40),
+      /**
+       * Read-through relays used to fetch Google News RSS when Google blocks the
+       * server/Worker egress IP (HTTP 503 automated-query page). URL templates
+       * with {url}/{rawurl}; empty = direct only.
+       */
+      proxies: z.array(z.string()).default([]),
+      /**
+       * Official publisher RSS feeds (BBC, NYT, Guardian, Yahoo, ...). The reliable
+       * news source: Google has no official News API and blocks automated RSS access,
+       * so publisher feeds are the sanctioned, dependable path. Override via GOOGLE_NEWS_RSS_FEEDS.
+       */
+      publisherFeeds: z.array(z.string()).default([]),
     }),
     newsApi: z.object({
       apiKey: z.string().optional(),

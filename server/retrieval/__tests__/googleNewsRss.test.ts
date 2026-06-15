@@ -22,7 +22,7 @@ describe('fetchGoogleNewsRssCandidates', () => {
   });
 
   it('returns wrapper URL candidates without decoding during retrieval', async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-02-06T12:00:00.000Z'));
 
     const wrapperUrl =
@@ -50,7 +50,7 @@ describe('fetchGoogleNewsRssCandidates', () => {
   });
 
   it('tries the next query variant when earlier variants have no recent items', async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-02-06T12:00:00.000Z'));
 
     const staleWrapperUrl =
@@ -94,11 +94,11 @@ describe('fetchGoogleNewsRssCandidates', () => {
     ]);
   });
 
-  it('tries the next query variant when Google blocks an earlier RSS request', async () => {
-    vi.useFakeTimers();
+  it('rides out a soft 503 block by retrying the direct request with a rotated UA', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-02-06T12:00:00.000Z'));
 
-    const recentWrapperUrl = 'https://news.google.com/rss/articles/CBMiRecentBlockedFallback?oc=5';
+    const recentWrapperUrl = 'https://news.google.com/rss/articles/CBMiRecentRetry?oc=5';
     const recentFeedXml = `<?xml version="1.0" encoding="UTF-8"?>
       <rss><channel>
       <item>
@@ -109,22 +109,27 @@ describe('fetchGoogleNewsRssCandidates', () => {
         <source url="https://example.com">Example</source>
       </item>
       </channel></rss>`;
+    const blockPage = () =>
+      new Response('<html><title>Sorry...</title> automated queries </html>', { status: 503, statusText: 'Service Unavailable' });
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response('<html><title>Sorry...</title></html>', { status: 503, statusText: 'Service Unavailable' }))
+      .mockResolvedValueOnce(blockPage())
+      .mockResolvedValueOnce(blockPage())
       .mockResolvedValueOnce(new Response(recentFeedXml, { status: 200, headers: { 'content-type': 'application/rss+xml' } }));
 
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await fetchGoogleNewsRssCandidates(['blocked complex query', 'b2b ecommerce technology'], configStub);
+    const result = await fetchGoogleNewsRssCandidates('b2b ecommerce technology', configStub);
 
     expect(result.items.length).toBe(1);
     expect(result.query).toBe('b2b ecommerce technology');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((result.metrics as any).via).toBe('direct');
+    // two blocked attempts, then success on the third
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[0][1]?.headers?.['User-Agent']).toContain('Mozilla/5.0');
-    expect((result.metrics as any).queryVariants).toEqual([
-      expect.objectContaining({ query: 'blocked complex query', rawReturned: 0, used: false, error: expect.stringContaining('503') }),
-      expect.objectContaining({ query: 'b2b ecommerce technology', rawReturned: 1, afterRecency: 1, afterPreFilter: 1, used: true }),
-    ]);
+    // User-Agent rotates between retries
+    expect(fetchMock.mock.calls[1][1]?.headers?.['User-Agent']).not.toBe(
+      fetchMock.mock.calls[0][1]?.headers?.['User-Agent'],
+    );
   });
 });
