@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { ConfigSchema, RFC1918_CIDRS, type AppConfig, type PublicConfig, getPublicConfig as getPublicConfigShared } from '../../shared/config';
+import { DEFAULT_GOOGLE_NEWS_PROXIES } from '../retrieval/googleNewsProxies';
 
 const numberFromEnv = (value: string | undefined, fallback: number): number => {
   if (value == null || value.trim() === '') {
@@ -81,6 +82,9 @@ const buildConfig = (): AppConfig => {
         gl: (process.env.GOOGLE_NEWS_RSS_GL || 'US').trim(),
         ceid: (process.env.GOOGLE_NEWS_RSS_CEID || 'US:en').trim(),
         maxResults: Math.max(1, Math.min(100, numberFromEnv(process.env.GOOGLE_NEWS_RSS_MAX_RESULTS, 40))),
+        proxies: csvFromEnv(process.env.GOOGLE_NEWS_RSS_PROXIES).length
+          ? csvFromEnv(process.env.GOOGLE_NEWS_RSS_PROXIES)
+          : DEFAULT_GOOGLE_NEWS_PROXIES,
       },
       newsApi: {
         apiKey: process.env.NEWS_API_KEY || process.env.NEWSAPI_KEY || undefined,

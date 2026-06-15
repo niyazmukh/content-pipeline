@@ -1,4 +1,5 @@
 import { ConfigSchema, RFC1918_CIDRS, type AppConfig } from '../../shared/config';
+import { DEFAULT_GOOGLE_NEWS_PROXIES } from '../../server/retrieval/googleNewsProxies';
 
 export interface WorkerEnv {
   GEMINI_API_KEY?: string;
@@ -12,6 +13,7 @@ export interface WorkerEnv {
   GOOGLE_NEWS_RSS_GL?: string;
   GOOGLE_NEWS_RSS_CEID?: string;
   GOOGLE_NEWS_RSS_MAX_RESULTS?: string;
+  GOOGLE_NEWS_RSS_PROXIES?: string;
   NEWS_API_KEY?: string;
   EVENT_REGISTRY_API_KEY?: string;
   EVENT_REGISTRY_SOURCE_RANK_PERCENTILE?: string;
@@ -125,6 +127,7 @@ export const buildWorkerConfig = (keys: RequestKeys, env: WorkerEnv = {}): AppCo
         gl: resolvedGoogleNewsGl,
         ceid: resolvedGoogleNewsCeid,
         maxResults: Math.max(1, Math.min(100, Math.round(resolvedGoogleNewsMax))),
+        proxies: csv(env.GOOGLE_NEWS_RSS_PROXIES).length ? csv(env.GOOGLE_NEWS_RSS_PROXIES) : DEFAULT_GOOGLE_NEWS_PROXIES,
       },
       newsApi: {
         apiKey: resolvedNewsKey || undefined,
