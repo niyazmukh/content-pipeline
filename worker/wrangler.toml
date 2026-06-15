@@ -5,3 +5,8 @@ compatibility_date = "2025-01-25"
 [vars]
 # Optional: set a default allowed origin for CORS. Use "*" for development.
 ALLOWED_ORIGIN = "*"
+# Google providers are currently unreliable from Cloudflare Workers:
+# - Custom Search returns API_KEY_SERVICE_BLOCKED for the configured key.
+# - Google News RSS returns Google's automated-query 503 page from Worker egress.
+GOOGLE_CSE_ENABLED = "false"
+GOOGLE_NEWS_RSS_ENABLED = "false"

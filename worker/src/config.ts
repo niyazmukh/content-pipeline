@@ -5,6 +5,7 @@ export interface WorkerEnv {
   GEMINI_REQUESTS_PER_MINUTE?: string;
   GOOGLE_CSE_API_KEY?: string;
   GOOGLE_CSE_CX?: string;
+  GOOGLE_CSE_ENABLED?: string;
   GOOGLE_CSE_ALLOWED_HOSTS?: string;
   GOOGLE_NEWS_RSS_ENABLED?: string;
   GOOGLE_NEWS_RSS_HL?: string;
@@ -29,6 +30,14 @@ const csv = (value: string | undefined): string[] =>
     .split(',')
     .map((v) => v.trim())
     .filter(Boolean);
+
+const booleanOr = (value: string | undefined, fallback: boolean): boolean => {
+  if (value == null || value.trim() === '') return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+};
 
 export interface RequestKeys {
   geminiApiKey: string;
@@ -68,10 +77,9 @@ export const buildWorkerConfig = (keys: RequestKeys, env: WorkerEnv = {}): AppCo
   const resolvedGeminiKey = geminiApiKey || env.GEMINI_API_KEY || '';
   const resolvedGoogleKey = googleCseApiKey || env.GOOGLE_CSE_API_KEY || '';
   const resolvedGoogleCx = googleCseCx || env.GOOGLE_CSE_CX || '';
+  const resolvedGoogleCseEnabled = booleanOr(env.GOOGLE_CSE_ENABLED, true);
   const resolvedAllowedHosts = csv(env.GOOGLE_CSE_ALLOWED_HOSTS);
-  const resolvedGoogleNewsEnabled = (env.GOOGLE_NEWS_RSS_ENABLED || '').trim()
-    ? ['1', 'true', 'yes', 'on'].includes((env.GOOGLE_NEWS_RSS_ENABLED || '').trim().toLowerCase())
-    : true;
+  const resolvedGoogleNewsEnabled = booleanOr(env.GOOGLE_NEWS_RSS_ENABLED, true);
   const resolvedGoogleNewsHl = (env.GOOGLE_NEWS_RSS_HL || 'en-US').trim() || 'en-US';
   const resolvedGoogleNewsGl = (env.GOOGLE_NEWS_RSS_GL || 'US').trim() || 'US';
   const resolvedGoogleNewsCeid = (env.GOOGLE_NEWS_RSS_CEID || 'US:en').trim() || 'US:en';
@@ -107,7 +115,7 @@ export const buildWorkerConfig = (keys: RequestKeys, env: WorkerEnv = {}): AppCo
       googleCse: {
         apiKey: resolvedGoogleKey || undefined,
         searchEngineId: resolvedGoogleCx || undefined,
-        enabled: Boolean(resolvedGoogleKey && resolvedGoogleCx),
+        enabled: resolvedGoogleCseEnabled && Boolean(resolvedGoogleKey && resolvedGoogleCx),
         newsOnly: true,
         allowedHosts: resolvedAllowedHosts,
       },
