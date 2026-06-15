@@ -58,6 +58,36 @@ const parseRssItems = (xml: string) => {
   return Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [];
 };
 
+const fetchWithTimeout = async (
+  url: string,
+  options: { signal?: AbortSignal; timeoutMs: number; headers: Record<string, string> },
+) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+  let abortListener: (() => void) | null = null;
+
+  if (options.signal) {
+    if (options.signal.aborted) {
+      clearTimeout(timer);
+      throw new Error('Aborted');
+    }
+    abortListener = () => controller.abort();
+    options.signal.addEventListener('abort', abortListener, { once: true });
+  }
+
+  try {
+    return await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: options.headers,
+    });
+  } finally {
+    clearTimeout(timer);
+    if (abortListener && options.signal) {
+      options.signal.removeEventListener('abort', abortListener);
+    }
+  }
+};
 
 export const fetchGoogleNewsRssCandidates = async (
   query: string | string[],
@@ -82,15 +112,21 @@ export const fetchGoogleNewsRssCandidates = async (
   const maxResults = Math.min(Math.max(options.maxResults ?? config.connectors.googleNewsRss.maxResults ?? 40, 1), 100);
   const recencyHours = options.recencyHours ?? config.recencyHours;
   const recencyCutoffMs = Date.now() - recencyHours * 60 * 60 * 1000;
+  const userAgent =
+    config.retrieval?.userAgent ||
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36';
+  const timeoutMs = Math.min(Math.max(config.retrieval?.fetchTimeoutMs ?? 8_000, 1_000), 8_000);
   const variantMetrics: Array<{
     query: string;
     rawReturned: number;
     afterRecency: number;
     afterPreFilter: number;
     used: boolean;
+    error?: string;
   }> = [];
 
   let lastResult: ConnectorResult | null = null;
+  let lastError: string | null = null;
 
   for (const effectiveQuery of queryVariants.length ? queryVariants : [fallbackQuery]) {
     const params = new URLSearchParams({
@@ -100,17 +136,43 @@ export const fetchGoogleNewsRssCandidates = async (
       ceid: config.connectors.googleNewsRss.ceid,
     });
 
-    const response = await fetch(`${GOOGLE_NEWS_RSS_ENDPOINT}?${params.toString()}`, {
-      method: 'GET',
-      signal: options.signal,
-      headers: {
-        Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1',
-      },
-    });
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(`${GOOGLE_NEWS_RSS_ENDPOINT}?${params.toString()}`, {
+        signal: options.signal,
+        timeoutMs,
+        headers: {
+          Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1',
+          'Accept-Language': `${config.connectors.googleNewsRss.hl},en;q=0.9`,
+          'User-Agent': userAgent,
+          Referer: 'https://news.google.com/',
+        },
+      });
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      variantMetrics.push({
+        query: effectiveQuery,
+        rawReturned: 0,
+        afterRecency: 0,
+        afterPreFilter: 0,
+        used: false,
+        error: lastError,
+      });
+      continue;
+    }
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new Error(`Google News RSS request failed: ${response.status} ${response.statusText} ${text}`);
+      lastError = `Google News RSS request failed: ${response.status} ${response.statusText} ${text}`;
+      variantMetrics.push({
+        query: effectiveQuery,
+        rawReturned: 0,
+        afterRecency: 0,
+        afterPreFilter: 0,
+        used: false,
+        error: lastError,
+      });
+      continue;
     }
 
     const xml = await response.text();
@@ -222,6 +284,8 @@ export const fetchGoogleNewsRssCandidates = async (
     query: fallbackQuery,
     items: [],
     metrics: {
+      failed: Boolean(lastError),
+      error: lastError ?? undefined,
       used: 0,
       totalReturned: 0,
       afterRecency: 0,

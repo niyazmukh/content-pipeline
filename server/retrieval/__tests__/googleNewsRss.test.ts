@@ -93,4 +93,38 @@ describe('fetchGoogleNewsRssCandidates', () => {
       expect.objectContaining({ query: 'b2b ecommerce', rawReturned: 1, afterRecency: 1, afterPreFilter: 1, used: true }),
     ]);
   });
+
+  it('tries the next query variant when Google blocks an earlier RSS request', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-06T12:00:00.000Z'));
+
+    const recentWrapperUrl = 'https://news.google.com/rss/articles/CBMiRecentBlockedFallback?oc=5';
+    const recentFeedXml = `<?xml version="1.0" encoding="UTF-8"?>
+      <rss><channel>
+      <item>
+        <title>Fresh B2B ecommerce technology report - Example</title>
+        <link>${recentWrapperUrl}</link>
+        <pubDate>Fri, 06 Feb 2026 08:00:00 GMT</pubDate>
+        <description>&lt;a href="${recentWrapperUrl}"&gt;Fresh B2B ecommerce technology report&lt;/a&gt;</description>
+        <source url="https://example.com">Example</source>
+      </item>
+      </channel></rss>`;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('<html><title>Sorry...</title></html>', { status: 503, statusText: 'Service Unavailable' }))
+      .mockResolvedValueOnce(new Response(recentFeedXml, { status: 200, headers: { 'content-type': 'application/rss+xml' } }));
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchGoogleNewsRssCandidates(['blocked complex query', 'b2b ecommerce technology'], configStub);
+
+    expect(result.items.length).toBe(1);
+    expect(result.query).toBe('b2b ecommerce technology');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][1]?.headers?.['User-Agent']).toContain('Mozilla/5.0');
+    expect((result.metrics as any).queryVariants).toEqual([
+      expect.objectContaining({ query: 'blocked complex query', rawReturned: 0, used: false, error: expect.stringContaining('503') }),
+      expect.objectContaining({ query: 'b2b ecommerce technology', rawReturned: 1, afterRecency: 1, afterPreFilter: 1, used: true }),
+    ]);
+  });
 });

@@ -141,8 +141,10 @@ export const fetchGoogleCandidates = async (
   const recencyHours = options.recencyHours ?? config.recencyHours;
   const recencyCutoffMs = Date.now() - recencyHours * 60 * 60 * 1000;
   const recencyDays = Math.max(1, Math.min(31, Math.round(recencyHours / 24) || 1));
+  const timeoutMs = Math.min(Math.max(config.retrieval.fetchTimeoutMs ?? 8_000, 1_000), 8_000);
 
   const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let abortListener: (() => void) | null = null;
   if (options.signal) {
     if (options.signal.aborted) {
@@ -304,6 +306,7 @@ export const fetchGoogleCandidates = async (
       metrics: { pagesFetched: 0, totalReturned: 0, used: 0, queryVariants: variantMetrics },
     };
   } finally {
+    clearTimeout(timer);
     if (abortListener && options.signal) {
       options.signal.removeEventListener('abort', abortListener);
     }
